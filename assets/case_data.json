@@ -1,0 +1,172 @@
+{	
+	// caseInfo
+	"comment":null,
+	"caseId":"7e471c1f-b541-4ae6-91b2-d73964bc2b42",
+	"caseName":"login_反例",
+
+	// 自定义函数
+	"functions":[
+		{
+			"code":"import xxx\n\ndef xxx:\n    xxxx",
+			"name":"01_func_test",
+			"params":{
+				"types":[
+					"String",
+					"Boolean"
+				],
+				"names":[
+					"params1",
+					"params2"
+				]
+			}
+		},
+		{
+			"code":"import xx\n\ndef xxx():\n    xxx\n    xxx\n    ",
+			"name":"func_02",
+			"params":{
+				"types":[
+					"String",
+					"Int"
+				],
+				"names":[
+					"p_1",
+					"p_1"
+				]
+			}
+		}
+	],
+
+	// 公参
+	"params":{
+		"自定义参数-02":{
+			"type":"Int",
+			"value":"3"
+		},
+		"count":{
+			"type":"Int",
+			"value":"122"
+		}
+	},
+
+	// apiList
+	"apiList":[
+		{
+			"apiId":"ff506192-3c44-4020-92b9-712a6d40c8a5",
+			"apiName":"登录",
+			"apiDesc":"描述内容内容",
+			"url":"http://127.0.0.1:8080",
+			"path":"/autotest/login",
+			"method":"POST",
+			"protocol":"HTTP",
+
+			// 请求头
+			"headers":{
+				"content-type":"application/json",
+				"token":"toekn"
+			},
+
+			// 代理
+			"proxies":{
+				"password":"123456",
+				"url":"192.0.0.1:8080",
+				"username":"root"
+			},
+
+			// 请求体
+			"body":{
+				"file":[],
+				"form":[],
+				"raw":"",
+				"json":"{\"account\":\"test-05\",\"password\":\"MTIzNDU2\"}",
+				"type":"json"
+			},
+
+			// 查询参数
+			"query":{
+				"query_param_02":"02",
+				"query_param_01":"01"
+			},
+
+			// 路径参数
+			"rest":{
+				"query_param_01":"10",
+				"path_param_01":"10"
+			},
+
+			// 断言
+			"assertions":[
+				{
+					"expect":"0",
+					"expression":"$.status",
+					"method":"jsonpath",
+					"from":"resCode",
+					"assertion":"isGreaterThanOrEqualTo"
+				},
+				{
+					"expect":"",
+					"expression":"$.data",
+					"method":"jsonpath",
+					"from":"resBody",
+					"assertion":"isTrue"
+				}
+			],
+
+			// 关联
+			"relations":[
+				{
+					"expression":"$.token",
+					"method":"jsonpath",
+					"name":"token",
+					"from":"resBody"
+				}
+			],
+
+			// 控制
+			"controller":{
+				// 常规
+				"useSession":"true",
+				"saveSession":"true",
+				"sleepBeforeRun":"1",
+				"sleepAfterRun":"1",
+				"requireVerify":"true",
+				"requireStream":"true",
+				"loopExec":"{\"type\":\"FOR\",\"target\":\"\",\"assertion\":\"equals\",\"expect\":\"\",\"timeout\":0,\"indexName\":\"index-01\",\"times\":\"2\",\"num\":3}",
+				"timeout":"30",
+				"errorContinue":"true",
+
+				// 前置
+				"pre":[
+					{
+						"edit":false,
+						"name":"preScript",
+						"index":1,
+						"value":"import xxx\n\ndef func():\n    xxx\n    \nif 1==1:\n    print(\"xxx\")",
+						"desc":"pre-01"
+					},
+					{
+						"edit":false,
+						"name":"preSql",
+						"index":2,
+						"value":"{\"sqlType\":\"query\",\"sqlText\":\"select * from t\",\"names\":\"var1,var2\",\"db\":{\"password\":\"123456\",\"port\":\"3306\",\"host\":\"127.0.0.1\",\"user\":\"root\",\"db\":\"mysql\",\"tpz\":\"mysql\"}}",
+						"desc":"pre-03"
+					}
+				],
+				
+				// 后置
+				"post":[
+					{
+						"edit":false,
+						"name":"postScript",
+						"index":1,
+						"value":"import xxx\n\ndef func():\n    xxx\n    \nif 1==1:\n    print(\"xxx\")",
+						"desc":"post-01"
+					}
+				],
+				
+				
+				
+
+			}
+		}
+	]
+}

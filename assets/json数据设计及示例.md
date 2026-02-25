@@ -6,32 +6,10 @@
 
 ## 数据对象分层设计
 
-### 1. 基础配置数据对象
-
-#### 1.1 引擎配置对象 (EngineConfig)
+### 0. 基础配置数据对象
 
 引擎的基础配置信息，用于初始化测试引擎的运行环境和连接参数。
 
-```json
-{
-  "url": "string",           // 测试平台服务器地址
-  "engine": "string",        // 引擎标识码
-  "secret": "string",        // 引擎密钥
-  "header": {                 // HTTP请求头配置
-    "Content-Type": "string", // 内容类型，通常为application/json
-    "token": "string"         // 访问令牌
-  },
-  "webdriver": {              // WebDriver配置
-    "chrome-options": "string", // Chrome浏览器启动选项
-    "firefox-options": "string" // Firefox浏览器启动选项
-  },
-  "run_setting": {            // 运行设置
-    "max-run": "string"        // 最大运行次数
-  }
-}
-```
-
-**示例：**
 ```json
 {
   "url": "https://api.liuma-test.com",
@@ -51,446 +29,212 @@
 }
 ```
 
-### 2. 任务管理数据对象
-
-#### 2.1 测试任务对象 (Task)
-
-测试任务的完整配置信息，包含任务元数据、测试集合列表和执行参数。
+### 1. task_plan
 
 ```json
 {
-  "taskId": "string",                    // 任务唯一标识符
-  "taskType": "string",                  // 任务类型：normal/urgent/scheduled
-  "taskName": "string",                  // 任务名称
-  "downloadUrl": "string",               // 测试数据下载地址
-  "testCollectionList": [],              // 测试集合列表，类型为TestCollection数组
-  "executionConfig": {                   // 执行配置
-    "maxRetry": "number",                // 最大重试次数
-    "timeout": "number",                 // 超时时间（秒）
-    "parallel": "boolean",               // 是否并行执行
-    "threadCount": "number",              // 线程数量
-    "reportConfig": {                     // 报告配置
-      "generateReport": "boolean",        // 是否生成报告
-      "reportFormat": "string",           // 报告格式：html/json/xml
-      "reportPath": "string"              // 报告保存路径
-    },
-    "notificationConfig": {               // 通知配置
-      "enabled": "boolean",               // 是否启用通知
-      "email": {
-        "recipients": [],                  // 收件人列表
-        "subject": "string",              // 邮件主题
-        "template": "string"               // 邮件模板
-      },
-      "webhook": {
-        "url": "string",                   // Webhook地址
-        "method": "string",                // 请求方法
-        "headers": {}                      // 请求头
-      }
-    }
-  },
-  "environment": {                       // 环境配置
-    "baseUrl": "string",                 // 基础URL
-    "database": {                         // 数据库连接配置
-      "host": "string",                   // 数据库主机
-      "port": "number",                   // 数据库端口
-      "username": "string",               // 用户名
-      "password": "string",               // 密码
-      "database": "string",               // 数据库名
-      "type": "string",                   // 数据库类型：mysql/postgresql/oracle等
-      "charset": "string",                // 字符集
-      "pool": {                           // 连接池配置
-        "minSize": "number",              // 最小连接数
-        "maxSize": "number",              // 最大连接数
-        "timeout": "number"               // 连接超时时间
-      }
-    },
-    "variables": {                        // 环境变量
-      "global": {},                       // 全局变量
-      "runtime": {},                      // 运行时变量
-      "secrets": {}                       // 敏感信息变量
-    },
-    "proxy": {                           // 代理配置
-      "enabled": "boolean",               // 是否启用代理
-      "http": "string",                   // HTTP代理地址
-      "https": "string",                  // HTTPS代理地址
-      "auth": {                           // 代理认证
-        "username": "string",             // 用户名
-        "password": "string"              // 密码
-      }
-    }
-  }
+	"collection_id_01": [
+		{
+			"session": session,
+			"context": context,
+			"task_id": self.task["taskId"],
+			"test_type": case["caseType"],
+			"test_class": "class_" + collection,  # 测试类名
+			"test_case": "case_%s_%s" % (case["caseId"], case["index"]),  # 测试用例名
+			"test_data": os.path.join(self.data_path, self.task["taskId"], collection, case["caseId"] + ".json")
+		}, 
+		{},
+		{}	
+	],
+	"collection_id_02": [
+		{},{},{}
+	]
+
 }
 ```
 
-**示例：**
+
+
+### 2. task响应对象
+
 ```json
 {
   "taskId": "TASK-20241201-001",
-  "taskType": "normal",
-  "taskName": "用户管理模块回归测试",
-  "downloadUrl": "https://api.liuma-test.com/download/TASK-20241201-001.zip",
+  "taskType": "tmp/case/collection/plan",
+  "downloadUrl": "/openapi/task/file/download/task_id",
+  "maxThread":"3",
+  "reRun":"true",
   "testCollectionList": [
     {
       "collectionId": "COL-USER-001",
       "collectionName": "用户登录测试集",
-      "testCaseList": []
-    }
-  ],
-  "executionConfig": {
-    "maxRetry": 2,
-    "timeout": 300,
-    "parallel": true,
-    "threadCount": 4,
-    "reportConfig": {
-      "generateReport": true,
-      "reportFormat": "html",
-      "reportPath": "./reports/test_report_${@timestamp()}.html"
-    },
-    "notificationConfig": {
-      "enabled": true,
-      "email": {
-        "recipients": ["test@example.com", "admin@example.com"],
-        "subject": "测试执行结果通知 - ${taskName}",
-        "template": "default"
-      },
-      "webhook": {
-        "url": "https://hooks.slack.com/services/xxx/yyy/zzz",
-        "method": "POST",
-        "headers": {
-          "Content-Type": "application/json",
-          "Authorization": "Bearer ${webhook_token}"
-        }
-      }
-    }
-  },
-  "environment": {
-    "baseUrl": "https://test-api.example.com",
-    "database": {
-      "host": "localhost",
-      "port": 3306,
-      "username": "test_user",
-      "password": "test_pass",
-      "database": "test_db",
-      "type": "mysql",
-      "charset": "utf8mb4",
-      "pool": {
-        "minSize": 5,
-        "maxSize": 20,
-        "timeout": 30
-      }
-    },
-    "variables": {
-      "global": {
-        "app_version": "1.0.0",
-        "test_env": "staging",
-        "base_timeout": 30
-      },
-      "runtime": {
-        "admin_token": "${@generate_token()}",
-        "test_user_id": "12345",
-        "session_id": "${@uuid()}"
-      },
-      "secrets": {
-        "api_key": "${@env('API_KEY')}",
-        "db_password": "${@env('DB_PASSWORD')}"
-      }
-    },
-    "proxy": {
-      "enabled": false,
-      "http": "http://proxy.company.com:8080",
-      "https": "https://proxy.company.com:8443",
-      "auth": {
-        "username": "proxy_user",
-        "password": "proxy_pass"
-      }
-    }
-  }
-}
-```
-
-#### 2.2 测试集合对象 (TestCollection)
-
-测试用例的逻辑分组，包含多个相关的测试用例。
-
-```json
-{
-  "collectionId": "string",              // 集合唯一标识符
-  "collectionName": "string",            // 集合名称
-  "description": "string",               // 集合描述
-  "testCaseList": [],                    // 测试用例列表，类型为TestCase数组
-  "setupScript": "string",               // 前置脚本
-  "teardownScript": "string",            // 后置脚本
-  "variables": {                          // 集合级变量
-    "common": {},                         // 通用变量
-    "environment": {},                    // 环境相关变量
-    "testData": {}                        // 测试数据变量
-  },
-  "priority": "string",                  // 优先级：high/medium/low
-  "tags": [],                            // 标签列表
-  "dependencies": [],                    // 依赖的其他集合ID列表
-  "retryConfig": {                       // 重试配置
-    "enabled": "boolean",                // 是否启用重试
-    "maxRetries": "number",              // 最大重试次数
-    "retryInterval": "number"             // 重试间隔（秒）
-  },
-  "parallelConfig": {                    // 并行配置
-    "enabled": "boolean",                // 是否启用并行执行
-    "maxThreads": "number"               // 最大线程数
-  }
-}
-```
-
-**示例：**
-```json
-{
-  "collectionId": "COL-USER-001",
-  "collectionName": "用户登录测试集",
-  "description": "测试用户登录相关功能，包括正常登录、异常登录和权限验证",
-  "testCaseList": [
-    {
-      "caseId": "TC-LOGIN-001",
-      "caseName": "正常用户登录测试",
-        "index":001
-    }
-  ],
-  "setupScript": "# 初始化测试数据\nsys_put('test_start_time', '${@current_timestamp()}')\nsys_put('collection_id', '${collectionId}')\nprint('开始执行用户登录测试集')",
-  "teardownScript": "# 清理测试数据\nsys_put('test_end_time', '${@current_timestamp()}')\nprint('用户登录测试集执行完成')\n# 清理临时数据\nsys_put('temp_token', '')",
-  "variables": {
-    "common": {
-      "valid_username": "test_user",
-      "valid_password": "Test123456",
-      "invalid_password": "wrong_pass",
-      "test_email": "test@example.com"
-    },
-    "environment": {
-      "login_url": "${baseUrl}/api/v1/auth/login",
-      "logout_url": "${baseUrl}/api/v1/auth/logout",
-      "profile_url": "${baseUrl}/api/v1/user/profile"
-    },
-    "testData": {
-      "user_roles": ["admin", "user", "guest"],
-      "test_accounts": [
-        {"username": "admin_user", "password": "Admin123", "role": "admin"},
-        {"username": "normal_user", "password": "User123", "role": "user"}
-      ]
-    }
-  },
-  "priority": "high",
-  "tags": ["authentication", "login", "security", "smoke"],
-  "dependencies": ["COL-SETUP-001"],
-  "retryConfig": {
-    "enabled": true,
-    "maxRetries": 2,
-    "retryInterval": 5
-  },
-  "parallelConfig": {
-    "enabled": false,
-    "maxThreads": 1
-  }
-}
-```
-
-### 3. 测试用例数据对象
-
-#### 3.1 基础测试用例对象 (TestCase)
-
-所有类型测试用例的基础结构，包含通用的测试用例信息。
-
-```json
-{
-  "caseId": "string",                    // 用例唯一标识符
-  "caseName": "string",                  // 用例名称
-  "caseType": "string",                  // 用例类型：API/WEB/APP
-  "description": "string",               // 用例描述
-  "priority": "string",                  // 优先级：high/medium/low
-  "tags": [],                            // 标签数组，类型为string数组
-  "author": "string",                    // 用例作者
-  "createTime": "string",                // 创建时间
-  "updateTime": "string",                // 更新时间
-  "enabled": "boolean",                  // 是否启用
-  "timeout": "number",                   // 超时时间（秒）
-  "retryCount": "number",                // 重试次数
-  "preScript": "string",                 // 前置脚本
-  "postScript": "string",                // 后置脚本
-  "variables": {                          // 用例级变量
-    "input": {},                          // 输入参数变量
-    "expected": {},                       // 期望结果变量
-    "runtime": {}                         // 运行时变量
-  },
-  "assertions": [],                      // 断言列表，类型为Assertion数组
-  "testData": {                        // 测试数据配置
-    "source": "string",                   // 数据来源：inline/file/database/api
-    "format": "string",                   // 数据格式：json/csv/xml/yaml
-    "inline": {                           // 内联数据
-      "parameters": {},                   // 参数数据
-      "expected": {},                     // 期望结果数据
-      "fixtures": {}                      // 固定数据
-    },
-    "file": {                             // 文件数据源
-      "path": "string",                   // 文件路径
-      "sheet": "string",                  // Excel工作表名
-      "encoding": "string",               // 文件编码
-      "delimiter": "string"               // CSV分隔符
-    },
-    "database": {                         // 数据库数据源
-      "connection": "string",             // 连接配置
-      "query": "string",                  // 查询语句
-      "parameters": {}                    // 查询参数
-    },
-    "api": {                              // API数据源
-      "url": "string",                    // API地址
-      "method": "string",                 // 请求方法
-      "headers": {},                      // 请求头
-      "auth": {}                          // 认证信息
-    },
-    "transformation": {                   // 数据转换
-      "enabled": "boolean",               // 是否启用转换
-      "script": "string",                 // 转换脚本
-      "mapping": {}                       // 字段映射
-    },
-    "validation": {                       // 数据验证
-      "enabled": "boolean",               // 是否启用验证
-      "schema": {},                       // 数据模式
-      "rules": []                         // 验证规则
-    },
-    "cache": {                            // 数据缓存
-      "enabled": "boolean",               // 是否启用缓存
-      "ttl": "number",                    // 缓存时间
-      "key": "string"                     // 缓存键
-    }
-   },
-    "setupHooks": {                        // 前置钩子配置
-    "database": [],                       // 数据库前置操作
-    "api": [],                            // API前置调用
-    "files": []                           // 文件前置操作
-  },
-  "teardownHooks": {                     // 后置钩子配置
-    "database": [],                       // 数据库后置操作
-    "api": [],                            // API后置调用
-    "files": []                           // 文件后置操作
-  },
-  "dataProviders": [],                   // 数据提供者列表
-  "skipConditions": []                   // 跳过条件列表
-}
-```
-
-**示例：**
-```json
-{
-  "caseId": "TC-LOGIN-001",
-  "caseName": "正常用户登录测试",
-  "caseType": "API",
-  "description": "验证用户使用正确的用户名和密码能够成功登录系统",
-  "testData": {
-    "caseId": "TC-LOGIN-001",
-  	"caseName": "正常用户登录测试",
-      "functions":{}
-    "apiList": []
-  },
-  "priority": "high",
-  "tags": ["login", "authentication", "smoke"],
-  "author": "张三",
-  "createTime": "2024-12-01T10:00:00Z",
-  "updateTime": "2024-12-01T15:30:00Z",
-  "enabled": true,
-  "timeout": 30,
-  "retryCount": 2,
-  "preScript": "# 准备测试数据\nsys_put('username', '${valid_username}')\nsys_put('password', '${valid_password}')\nsys_put('test_start_time', '${@current_timestamp()}')\nprint('开始执行登录测试用例')",
-  "postScript": "# 保存登录token\nsys_put('login_token', '${response.json.data.token}')\nsys_put('user_info', '${response.json.data.userInfo}')\nprint('登录测试用例执行完成')",
-  "variables": {
-    "input": {
-      "username": "${valid_username}",
-      "password": "${valid_password}",
-      "captcha_required": false,
-      "remember_me": true
-    },
-    "expected": {
-      "status_code": 200,
-      "business_code": "0",
-      "message": "登录成功",
-      "token_length": 32
-    },
-    "runtime": {
-      "request_id": "${@uuid()}",
-      "client_ip": "127.0.0.1",
-      "user_agent": "LiuMa-Engine/1.0"
-    }
-  },
-  "assertions": [
-    {
-      "type": "equalsNumber",
-      "actual": "${response.status_code}",
-      "expected": "${expected.status_code}",
-      "description": "验证响应状态码为200"
-    },
-    {
-      "type": "equal",
-      "actual": "${response.json.code}",
-      "expected": "${expected.business_code}",
-      "description": "验证业务状态码"
-    },
-    {
-      "type": "contains",
-      "actual": "${response.json.message}",
-      "expected": "${expected.message}",
-      "description": "验证响应消息"
-    }
-  ],
-  "setupHooks": {
-    "database": [
-      {
-        "type": "execute",
-        "sql": "UPDATE users SET login_attempts = 0 WHERE username = '${input.username}'",
-        "description": "重置用户登录尝试次数"
-      }
-    ],
-    "api": [
-      {
-        "name": "获取验证码",
-        "url": "${baseUrl}/api/v1/captcha",
-        "method": "GET",
-        "saveAs": "captcha_info"
-      }
-    ],
-    "files": [
-      {
-        "action": "create",
-        "path": "./temp/login_test_${@timestamp()}.log",
-        "content": "Login test started at ${@current_timestamp()}"
-      }
-    ]
-  },
-  "teardownHooks": {
-    "database": [
-      {
-        "type": "execute",
-        "sql": "INSERT INTO login_logs (username, login_time, result) VALUES ('${input.username}', NOW(), 'SUCCESS')",
-        "description": "记录登录日志"
-      }
-    ],
-    "api": [],
-    "files": [
-      {
-        "action": "append",
-        "path": "./temp/login_test_${@timestamp()}.log",
-        "content": "Login test completed at ${@current_timestamp()}"
-      }
-    ]
-  },
-  "dataProviders": [
-    {
-      "name": "user_credentials",
-      "type": "csv",
-      "source": "./data/test_users.csv",
-      "columns": ["username", "password", "expected_result"]
-    }
-  ],
-  "skipConditions": [
-    {
-      "condition": "${@env('SKIP_LOGIN_TESTS')} == 'true'",
-      "reason": "登录测试在当前环境中被跳过"
+      "testCaseList": [
+    		{"index":"1","caseId":"12-22"，"caseType":"api"},
+			{"index":"2","caseId":"12-22"，"caseType":"api"}
+		]
     }
   ]
+  "DebugData":{}
+}
+```
+
+### 3. case响应对象（DebugData）
+
+```json
+{	
+	// caseInfo
+	"comment":null,
+	"caseId":"7e471c1f-b541-4ae6-91b2-d73964bc2b42",
+	"caseName":"login_反例",
+
+	// 自定义函数
+	"functions":[
+		{
+			"code":"import xxx\n\ndef xxx:\n    xxxx",
+			"name":"01_func_test",
+			"params":{
+				"types":[
+					"String",
+					"Boolean"
+				],
+				"names":[
+					"params1",
+					"params2"
+				]
+			}
+		}
+	],
+
+	// 公参
+	"params":{
+		"count":{
+			"type":"Int",
+			"value":"122"
+		},
+        "var":{}
+	},
+
+	// apiList
+	"apiList":[
+		{
+			"apiId":"ff506192-3c44-4020-92b9-712a6d40c8a5",
+			"apiName":"登录",
+			"apiDesc":"描述内容内容",
+			"url":"http://127.0.0.1:8080",
+			"path":"/autotest/login",
+			"method":"POST",
+			"protocol":"HTTP",
+
+			// 请求头
+			"headers":{
+				"content-type":"application/json",
+				"token":"toekn"
+			},
+
+			// 代理
+			"proxies":{
+				"password":"123456",
+				"url":"192.0.0.1:8080",
+				"username":"root"
+			},
+
+			// 请求体
+			"body":{
+				"file":[],
+				"form":[],
+				"raw":"",
+				"json":"{\"account\":\"test-05\",\"password\":\"MTIzNDU2\"}",
+				"type":"json"
+			},
+
+			// 查询参数
+			"query":{
+				"query_param_02":"02",
+				"query_param_01":"01"
+			},
+
+			// 路径参数
+			"rest":{
+				"query_param_01":"10",
+				"path_param_01":"10"
+			},
+
+			// 断言
+			"assertions":[
+				{
+					"expect":"0",
+					"expression":"$.status",
+					"method":"jsonpath",
+					"from":"resCode",
+					"assertion":"isGreaterThanOrEqualTo"
+				},
+				{
+					"expect":"",
+					"expression":"$.data",
+					"method":"jsonpath",
+					"from":"resBody",
+					"assertion":"isTrue"
+				}
+			],
+
+			// 关联
+			"relations":[
+				{
+					"expression":"$.token",
+					"method":"jsonpath",
+					"name":"token",
+					"from":"resBody"
+				}
+			],
+
+			// 控制
+			"controller":{
+				// 常规
+				"useSession":"true",
+				"saveSession":"true",
+				"sleepBeforeRun":"1",
+				"sleepAfterRun":"1",
+				"requireVerify":"true",
+				"requireStream":"true",
+				"loopExec":"{\"type\":\"FOR\",\"target\":\"\",\"assertion\":\"equals\",\"expect\":\"\",\"timeout\":0,\"indexName\":\"index-01\",\"times\":\"2\",\"num\":3}",
+				"timeout":"30",
+				"errorContinue":"true",
+
+				// 前置
+				"pre":[
+					{
+						"edit":false,
+						"name":"preScript",
+						"index":1,
+						"value":"import xxx\n\ndef func():\n    xxx\n    \nif 1==1:\n    print(\"xxx\")",
+						"desc":"pre-01"
+					},
+					{
+						"edit":false,
+						"name":"preSql",
+						"index":2,
+						"value":"{\"sqlType\":\"query\",\"sqlText\":\"select * from t\",\"names\":\"var1,var2\",\"db\":{\"password\":\"123456\",\"port\":\"3306\",\"host\":\"127.0.0.1\",\"user\":\"root\",\"db\":\"mysql\",\"tpz\":\"mysql\"}}",
+						"desc":"pre-03"
+					}
+				],
+				
+				// 后置
+				"post":[
+					{
+						"edit":false,
+						"name":"postScript",
+						"index":1,
+						"value":"import xxx\n\ndef func():\n    xxx\n    \nif 1==1:\n    print(\"xxx\")",
+						"desc":"post-01"
+					}
+				],
+				
+				
+				
+
+			}
+		}
+	]
 }
 ```
 

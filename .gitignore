@@ -4,4 +4,15 @@
 *.pyo
 *.pyd
 venv/
-env/
+env
+.idea
+log/
+Dockerfile
+.trae/
+.vscode/
+target/
+*.iws
+*.iml
+*.ipr
+data
+**/chromedriver.exe

@@ -51,7 +51,7 @@ class Start(object):
         # 创建任务队列，用于存储从平台拉取的待执行任务
         task_queue = Queue()
 
-        # 启动任务拉取线程，定时从平台获取新的测试任务
+        # 启动任务拉取线程，定时从平台获取新的测试任务，并把任务放到exec_process，和task_queue
         task_thread = threading.Thread(target=self.fetch_task, args=(task_queue,))
         task_thread.start()  # 初始化一次任务拉取，避免任务遗漏
 
@@ -106,28 +106,22 @@ class Start(object):
 
             # 处理配置URL，确保格式正确（移除末尾斜杠）
             domain = self.config.url[:-1] if self.config.url.endswith("/") else self.config.url
-
-            # 构建WebSocket心跳连接URL，将HTTP协议替换为WS协议
-            # 包含引擎编码和密钥作为认证参数
             url = domain.replace("http", "ws") + "/websocket/engine/heartbeat?engineCode={}&engineSecret={}". \
                 format(self.config.engine, self.config.secret)
 
             try:
-                # 创建WebSocket客户端实例，传入消息队列用于双向通信
+                # 创建WebSocket客户端实例
                 ws = Client(url, queue)
-
-                # 建立WebSocket连接到测试平台
                 ws.connect()
 
                 # 心跳发送循环
                 while True:
-                    # 等待30秒后发送下一次心跳
                     time.sleep(30)
 
-                    # 发送心跳数据包（空字节数据）
-                    ws.send(bytes(0))  # 每隔30秒更新心跳
+                    # 每隔30秒更新心跳
+                    ws.send(bytes(0))
 
-                    # 记录心跳成功日志，使用分隔线便于查看
+                    # 记录心跳成功日志
                     DebugLogger("-------------------------------------------------", file_path=log_path)
                     DebugLogger("心跳更新成功", file_path=log_path)
                     DebugLogger("-------------------------------------------------", file_path=log_path)
@@ -137,7 +131,6 @@ class Start(object):
                 ws.close()
 
             except Exception as e:
-                # 捕获所有其他异常，记录错误信息并准备重连
                 DebugLogger("-------------------------------------------------", file_path=log_path)
                 ErrorLogger("心跳连接失败 1秒钟后重试 失败原因:%s" % e, file_path=log_path)
                 DebugLogger("-------------------------------------------------", file_path=log_path)
@@ -156,7 +149,6 @@ class Start(object):
         while True:
             # 检查当前执行进程数量是否小于配置的最大并发数
             if len(self.exec_processes) < int(self.config.max_run):
-                # 通过API客户端从平台拉取新的测试任务（请求任务接口的响应数据的data字段）
                 task = self.api.fetch_task()
 
                 # 检查是否成功获取到任务
@@ -174,7 +166,6 @@ class Start(object):
                     break
             else:
                 # 当前执行进程数已达到最大限制，等待3秒后重试
-                # 这样可以在有进程结束后及时获取新任务
                 time.sleep(3)
 
     def monitor_message(self, message_queue, task_queue):
@@ -232,8 +223,8 @@ class Start(object):
                     # 清空所有进程记录
                     self.exec_processes.clear()
 
-                else:  # completed - 任务完成指令
-                    # 任务正常完成，清理进程记录
+                # completed - 任务完成指令,任务正常完成，清理进程记录
+                else:
                     if message["data"] in self.exec_processes:
                         del self.exec_processes[message["data"]]
 
