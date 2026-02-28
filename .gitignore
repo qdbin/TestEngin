@@ -16,3 +16,6 @@ target/
 *.ipr
 data
 **/chromedriver.exe
+htmlcov
+.pytest_cache
+.coverage

@@ -4,27 +4,31 @@
 
 ### 1.1 项目定位
 
-测试执行引擎（TestEngin）是流马自动化测试平台的分布式执行组件，采用 Python + Unittest 框架构建，负责接收平台下发的测试任务，解析测试数据，执行 API/WEB/APP 测试，并回传执行结果。
+测试执行引擎（TestEngin）是流马自动化测试平台的分布式执行组件，采用 Python + Unittest/Pytest 双框架构建，负责接收平台下发的测试任务，解析测试数据，执行 API/WEB/APP 测试，并回传执行结果。
 
 ### 1.2 技术栈
 
 | 技术 | 说明 |
 |------|------|
 | Python 3.8+ | 核心语言 |
-| Unittest | 测试框架基础 |
+| Unittest | WEB/APP测试框架（原有） |
+| **Pytest** | **API测试框架（重构新增）** |
 | Requests | HTTP请求处理 |
 | Selenium | Web自动化 |
 | uiautomator2 | Android自动化 |
 | Facebook-wda | iOS自动化 |
 | WebSocket | 与平台实时通信 |
+| Allure | 报告生成（可选） |
 
 ### 1.3 核心特性
 
 - **分布式架构**：引擎可注册到任意机器，突破资源限制
 - **多测试类型**：支持 API、WebUI、AppUI 三种测试
+- **双框架支持**：API使用Pytest，Web/App使用Unittest
 - **实时通信**：WebSocket 长连接，任务实时推送
 - **并发执行**：多进程 + 多线程，支持高并发
 - **结果回传**：实时上传执行结果和截图日志
+- **Allure报告**：可选的详细测试报告（独立于平台推送）
 
 ---
 
@@ -34,10 +38,12 @@
 TestEngin/
 ├── app/                          # 应用入口
 │   ├── start.py                  # 启动入口
-│   ├── run.py                   # 执行入口
+│   ├── run.py                   # 执行入口（支持Pytest/Unittest双模式）
 │   ├── ws.py                    # WebSocket通信
 │   ├── config.py                 # 配置加载
-│   └── log.py                   # 日志配置
+│   ├── log.py                   # 日志配置
+│   ├── json_collector.py         # Pytest JSON收集器（新增）
+│   └── pytest_hooks.py          # Pytest钩子函数（新增）
 ├── core/                         # 核心执行引擎
 │   ├── api/                     # API测试执行器
 │   │   ├── collector.py         # 用例收集
@@ -62,6 +68,11 @@ TestEngin/
 │   └── utils/                  # 工具类
 │       ├── sql.py              # 数据库操作
 │       └── utils.py            # 通用工具
+├── tests/                       # 单元测试（新增）
+│   ├── test_collector/         # 收集器测试
+│   ├── test_hooks/             # 钩子函数测试
+│   ├── test_integration/       # 集成测试
+│   └── fixtures/               # 测试数据
 ├── config/                      # 配置文件
 │   └── config.ini              # 引擎配置
 ├── browser/                     # 浏览器驱动
@@ -79,10 +90,12 @@ TestEngin/
 | 文件 | 职责 |
 |------|------|
 | start.py | 引擎启动入口，初始化配置和连接 |
-| run.py | 测试执行入口，管理任务执行流程 |
+| run.py | 测试执行入口，管理任务执行流程（支持Pytest/Unittest双模式） |
 | ws.py | WebSocket 通信，与平台实时交互 |
 | config.py | 配置文件加载和解析 |
 | log.py | 日志配置和输出管理 |
+| **json_collector.py** | **Pytest自定义JSON收集器（新增）** |
+| **pytest_hooks.py** | **Pytest钩子函数+Allure报告（新增）** |
 
 ### 3.2 核心执行引擎 (core/)
 
@@ -112,57 +125,131 @@ TestEngin/
 | utils/sql | 数据库操作工具 |
 | utils/utils | 通用工具函数 |
 
----
+### 3.4 测试模块 (tests/)
 
-## 四、核心流程设计
-
-### 4.1 引擎启动流程
-
-```mermaid
-flowchart TD
-    A[引擎启动] --> B[加载配置]
-    B --> C[建立心跳连接]
-    C --> D{连接成功?}
-    D -->|是| E[WebSocket监听启动]
-    D -->|否| F[重试连接]
-    F --> C
-    E --> G[任务拉取循环]
-    G --> H[消息监听循环]
-```
-
-### 4.2 任务执行流程
-
-```mermaid
-flowchart TD
-    A[接收任务] --> B[下载测试数据]
-    B --> C[数据解压解析]
-    C --> D[生成执行计划]
-    D --> E[分配线程池]
-    E --> F[并发执行用例]
-    F --> G[收集执行结果]
-    G --> H[上传结果到平台]
-    H --> I[清理资源]
-```
-
-### 4.3 用例执行流程
-
-```mermaid
-flowchart TD
-    A[用例初始化] --> B[前置处理]
-    B --> C{还有步骤?}
-    C -->|是| D[执行步骤]
-    D --> E[断言验证]
-    E --> F[参数提取]
-    F --> C
-    C -->|否| G[后置处理]
-    G --> H[记录结果]
-```
+| 目录 | 职责 |
+|------|------|
+| test_collector | JSON收集器单元测试 |
+| test_hooks | Pytest钩子函数单元测试 |
+| test_integration | 全链路集成测试 |
+| fixtures | 测试数据和fixtures |
 
 ---
 
-## 五、数据格式说明
+## 四、执行模式说明
 
-### 5.1 任务数据 (case_data.json)
+### 4.1 双模式执行架构
+
+```
+                    测试任务
+                        │
+          ┌─────────────┴─────────────┐
+          │                           │
+    检测测试类型                 检测测试类型
+          │                           │
+          ▼                           ▼
+    纯API测试                   WEB/APP测试
+          │                           │
+          ▼                           ▼
+    Pytest执行                  Unittest执行
+    (新增)                      (原有)
+          │                           │
+          └─────────────┬─────────────┘
+                        │
+                        ▼
+              result.py → queue
+                        │
+                        ▼
+                  平台推送
+```
+
+### 4.2 Pytest模式（API测试）
+
+当检测到纯API测试时，使用Pytest执行：
+
+```python
+# app/run.py
+def run_test(self):
+    test_types = set(case.get("test_type") for case in self.plan_tuple)
+    
+    if len(test_types) == 1 and "API" in test_types:
+        self._run_with_pytest()  # Pytest执行
+    else:
+        self._run_with_unittest()  # Unittest执行
+```
+
+**Pytest执行流程**：
+1. `pytest_collect_file` 钩子识别JSON文件
+2. `JSONFile` 收集器解析JSON数据
+3. `JSONCaseItem` 执行测试
+4. 复用 `ApiTestCase.execute()` 执行逻辑
+5. `pytest_runtest_makereport` 收集结果
+
+### 4.3 Unittest模式（WEB/APP测试）
+
+WEB和APP测试保持原有Unittest执行方式不变。
+
+---
+
+## 五、Allure报告说明
+
+### 5.1 功能特点
+
+- **可选功能**：默认关闭，不影响平台推送
+- **完全解耦**：采用旁路观察者模式，不侵入测试代码
+- **独立使用**：仅供开发人员本地查看
+
+### 5.2 开启方式
+
+```bash
+# 方式1：环境变量
+set ALLURE_ENABLED=true
+pytest tests/
+
+# 方式2：命令行参数
+pytest tests/ --allure-enabled
+```
+
+### 5.3 报告查看
+
+```bash
+# 生成报告
+allure serve htmlcov/allure-results
+
+# 或者
+allure generate htmlcov/allure-results -o allure-report
+allure open allure-report
+```
+
+---
+
+## 六、单元测试说明
+
+### 6.1 测试覆盖
+
+```bash
+# 运行测试并查看覆盖率
+pytest tests/ --cov=app --cov-report=html --cov-report=term-missing
+```
+
+| 模块 | 覆盖率 |
+|------|--------|
+| json_collector.py | 88% |
+| pytest_hooks.py | 75% |
+
+### 6.2 测试分类
+
+| 测试类型 | 目录 | 说明 |
+|---------|------|------|
+| 单元测试 | test_collector/ | 测试JSON收集器 |
+| 单元测试 | test_hooks/ | 测试钩子函数 |
+| 集成测试 | test_integration/ | 全链路测试 |
+
+---
+
+## 七、数据格式说明
+
+### 7.1 任务数据 (case_data.json)
 
 引擎从平台接收的测试数据格式：
 
@@ -189,7 +276,7 @@ flowchart TD
 }
 ```
 
-### 5.2 结果数据 (case_result.json)
+### 7.2 结果数据 (case_result.json)
 
 引擎回传给平台的结果格式：
 
@@ -218,9 +305,9 @@ flowchart TD
 
 ---
 
-## 六、配置说明
+## 八、配置说明
 
-### 6.1 config.ini 配置项
+### 8.1 config.ini 配置项
 
 ```ini
 [Platform]
@@ -236,7 +323,7 @@ path = chromedriver          # 驱动路径
 options = --no-sandbox       # 启动选项
 ```
 
-### 6.2 环境要求
+### 8.2 环境要求
 
 - Python 3.8+
 - Chrome 浏览器 + ChromeDriver
@@ -244,9 +331,9 @@ options = --no-sandbox       # 启动选项
 
 ---
 
-## 七、开发指南
+## 九、开发指南
 
-### 7.1 添加自定义函数
+### 9.1 添加自定义函数
 
 ```python
 # tools/funclib/provider/provider.py
@@ -260,7 +347,7 @@ def custom_function(param):
     return result
 ```
 
-### 7.2 添加新断言类型
+### 9.2 添加新断言类型
 
 ```python
 # core/assertion.py
@@ -274,19 +361,36 @@ def assert_custom(actual, expected):
     return actual == expected
 ```
 
+### 9.3 运行测试
+
+```bash
+# 安装测试依赖
+pip install pytest pytest-cov
+
+# 运行所有测试
+pytest tests/
+
+# 运行测试并查看覆盖率
+pytest tests/ --cov=app --cov-report=html
+
+# 运行特定测试
+pytest tests/test_collector/ -v
+```
+
 ---
 
-## 八、相关文档
+## 十、相关文档
 
 - [引擎业务逻辑设计](./assets/engin相关说明(按需了解即可)/业务逻辑设计.md)
 - [功能模块设计](./assets/engin相关说明(按需了解即可)/功能模块设计.md)
 - [数据格式说明](./assets/engin相关说明(按需了解即可)/补充（数据详情）/json数据设计及示例.md)
+- [Pytest重构技术方案](./assets/engin相关说明(按需了解即可)/Pytest重构技术方案.md)
 
 ---
 
-## 九、部署与启动
+## 十一、部署与启动
 
-### 9.1 本地启动
+### 11.1 本地启动
 
 ```bash
 # 1. 安装依赖
@@ -299,13 +403,13 @@ pip3 install -r requirements.txt
 python3 startup.py
 ```
 
-### 9.2 Docker 部署
+### 11.2 Docker 部署
 
 详见官方部署文档：http://www.liumatest.cn/deployDoc
 
 ---
 
-## 十、联系与支持
+## 十二、联系与支持
 
 - 演示平台：http://demo-ee.liumatest.cn
 - 官网地址：http://www.liumatest.cn
