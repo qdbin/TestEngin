@@ -1,17 +1,19 @@
-# 流马测试平台 - 测试执行引擎
+# 流马测试平台 - 测试执行引擎（TestEngin）
 
 ## 一、项目概述
 
 ### 1.1 项目定位
 
-测试执行引擎（TestEngin）是流马自动化测试平台的分布式执行组件，采用 Python + Unittest 框架构建，负责接收平台下发的测试任务，解析测试数据，执行 API/WEB/APP 测试，并回传执行结果。
+测试执行引擎（TestEngin）是流马自动化测试平台的分布式执行组件，负责接收平台下发的测试任务，解析测试数据，执行 API/WEB/APP 测试，并回传执行结果。
+
+当前版本在 **API 执行链路** 上引入了基于 **pytest 动态收集 Item** 的执行方式，用于替换原有的 unittest TestSuite 驱动，并保持平台调度/回传协议不变。
 
 ### 1.2 技术栈
 
 | 技术 | 说明 |
 |------|------|
 | Python 3.8+ | 核心语言 |
-| Unittest | 测试框架基础 |
+| Pytest | API 执行计划与动态收集（引擎侧执行框架） |
 | Requests | HTTP请求处理 |
 | Selenium | Web自动化 |
 | uiautomator2 | Android自动化 |
@@ -137,8 +139,8 @@ flowchart TD
     A[接收任务] --> B[下载测试数据]
     B --> C[数据解压解析]
     C --> D[生成执行计划]
-    D --> E[分配线程池]
-    E --> F[并发执行用例]
+    D --> E[生成 plan.json]
+    E --> F[pytest 动态收集执行]
     F --> G[收集执行结果]
     G --> H[上传结果到平台]
     H --> I[清理资源]
@@ -245,6 +247,29 @@ options = --no-sandbox       # 启动选项
 ---
 
 ## 七、开发指南
+
+### 7.0 pytest 执行改造说明（API）
+
+#### 设计目标
+- 平台侧 **调度与回传协议不变**：引擎仍通过队列产出 `case_info`，由 Reporter 统一上传
+- API 执行从 “unittest suite” 调整为 “plan.json + pytest 动态收集 Item”
+- Allure **完全旁路**：仅供开发人员本地查看，不影响平台回传
+
+#### 关键实现点
+- `app/plan_builder.py`：将任务解析产物写入 `data/{taskId}/{taskId}.run{n}.plan.json`
+- `app/pytest_api_plan_plugin.py`：pytest 收集 `.plan.json` 并执行每条 case，实时 `queue.put(case_info)`
+- `app/api_runtime.py`：提供 API-only Runtime，解耦 unittest._outcome 等内部结构依赖
+- `app/allure_replay.py`：旁路回放 transactionList 为 Allure step/附件（可开关，失败静默）
+
+#### Allure（开发旁路）
+- 默认关闭；开启方式：设置环境变量 `TESTENGIN_ALLURE=1`
+- 开启后会在任务目录下生成 `data/{taskId}/allure-results/run{n}`（如果本机有对应 pytest Allure 插件）
+
+#### 测试运行
+```bash
+# 单元/集成测试（不依赖平台/网络/真实数据库）
+python -m pytest
+```
 
 ### 7.1 添加自定义函数
 

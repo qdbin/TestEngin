@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 import os
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from requests import Session
 import zipfile
-from app.run import LMRun
 from app.log import DebugLogger, ErrorLogger
 from app.config import DATA_PATH, LMConfig
 from app.api import LMApi
+from app.plan_builder import build_descriptors_from_test_plan, write_plan_file
+from app.pytest_runner import run_api_plan
 
 
 class LMSetting(object):
@@ -149,35 +149,50 @@ class LMSetting(object):
                 queue (Queue): 用例结果队列，用于传递执行状态和结果
                 current_exec_status (Value): 共享变量，标识当前执行状态
         """
-        runTime = 1  # 默认执行1次
-        if self.task["reRun"]:  # 如果启用重跑功能
-            runTime = 2  # 执行2次（第二次只跑失败用例）
-        task_id = self.task["taskId"]  # 获取任务ID
-        max_thread = self.task["maxThread"]  # 获取最大线程数
-        queue.put("run_all_start--%s" % task_id)  # 发送任务开始信号
-        
-        # 执行指定次数的测试
-        for index in range(runTime):
-            if index == 0:  # 第一次执行
-                test_plan = plan  # 使用完整的测试计划
-            else:  # 第二次执行（重跑）
-                test_plan = self.read_fail_case(test_plan, default_result)  # 只执行失败的用例
-            default_result = []  # 初始化结果列表
-            
-            if len(test_plan) > 0:
-                queue.put("start_run_index--%s" % index)  # 发送执行轮次开始信号
-                default_lock = threading.RLock()  # 创建可重入锁
-                
-                # 使用线程池管理并发执行
-                with ThreadPoolExecutor(max_workers=max_thread) as t:
-                    # 为每个测试集合创建执行任务
-                    executors = [t.submit(LMRun(test_case_list, index + 1, default_result, default_lock,
-                                                queue).run_test, ) for test_case_list in test_plan.values()]
-                    as_completed(executors)  # 等待所有任务完成
+        run_time = 2 if self.task.get("reRun") else 1
+        task_id = self.task["taskId"]
+        queue.put("run_all_start--%s--API" % task_id)
 
-        # 发送任务结束信号
+        last_result = []
+        test_plan = plan
+        for index in range(run_time):
+            if index > 0:
+                test_plan = self.read_fail_case(plan, last_result)
+
+            default_result = []
+            last_result = default_result
+
+            if len(test_plan) == 0:
+                queue.put("start_run_index--%s" % index)
+                continue
+
+            queue.put("start_run_index--%s" % index)
+
+            shared_by_collection = {}
+            for collection_id, case_list in test_plan.items():
+                if not case_list:
+                    continue
+                shared_by_collection[str(collection_id)] = {
+                    "session": case_list[0]["session"],
+                    "context": case_list[0]["context"],
+                }
+
+            descriptors = build_descriptors_from_test_plan(test_plan)
+            plan_path = write_plan_file(task_id=task_id, run_times=index + 1, descriptors=descriptors)
+            allure_enabled = str(os.getenv("TESTENGIN_ALLURE", "")).lower() in ("1", "true", "on")
+            allure_dir = os.path.join(self.data_path, str(task_id), "allure-results", f"run{index + 1}") if allure_enabled else None
+            run_api_plan(
+                plan_path=plan_path,
+                queue=queue,
+                shared_by_collection=shared_by_collection,
+                run_times=index + 1,
+                default_result=default_result,
+                allure_enabled=allure_enabled,
+                allure_dir=allure_dir,
+            )
+
         queue.put("run_all_stop--%s" % task_id)
-        current_exec_status.value = 1  # 设置执行状态为完成
+        current_exec_status.value = 1
 
     @staticmethod
     def read_fail_case(test_plan, result):

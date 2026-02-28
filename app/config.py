@@ -43,12 +43,23 @@ class IniReader:
         value = config.get(section, option)
         return value
 
+    def safe_data(self, section, option, default=None):
+        config = configparser.ConfigParser()
+        config.read(self.ini_file, encoding="utf-8")
+        if not config.has_section(section):
+            return default
+        if not config.has_option(section, option):
+            return default
+        return config.get(section, option)
+
     def option(self, section):
         # 创建配置解析器实例
         config = configparser.ConfigParser()
         config.read(self.ini_file, encoding="utf-8")
 
         # 获取指定节下的所有选项名列表,这里获得的是keys，没有value！！！
+        if not config.has_section(section):
+            return {}
         options = config.options(section)
 
         # 用于存储选项名和值的映射
@@ -82,16 +93,16 @@ class LMConfig(object):
         self.engine = reader.data("Engine", "engine-code")
         self.secret = reader.data("Engine", "engine-secret")
         
-        # 加载HTTP请求头配置，返回完整的头部字典
         self.header = reader.option("Header")
-        
-        # 加载浏览器驱动配置
-        self.browser_opt = reader.data("WebDriver", "options")
-        # 根据驱动选项决定路径处理方式：remote模式或绝对路径直接使用，否则拼接到browser目录
-        if self.browser_opt == "remote" or "/" in reader.data("WebDriver", "path"):
-            self.browser_path = reader.data("WebDriver", "path")
+
+        self.browser_opt = reader.safe_data("WebDriver", "options", default="")
+        webdriver_path = reader.safe_data("WebDriver", "path", default="")
+        if self.browser_opt == "remote" or "/" in webdriver_path:
+            self.browser_path = webdriver_path
+        elif webdriver_path:
+            self.browser_path = os.path.join(BROWSER_PATH, webdriver_path)
         else:
-            self.browser_path = os.path.join(BROWSER_PATH, reader.data("WebDriver", "path"))
+            self.browser_path = ""
         
         # 加载运行时配置：最大并发执行数量
         self.max_run = reader.data("RunSetting", "max-run")
