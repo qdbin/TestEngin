@@ -7,7 +7,6 @@ venv/
 env
 .idea
 log/
-Dockerfile
 .trae/
 .vscode/
 target/
