@@ -14,6 +14,7 @@
 """
 
 import unittest
+import pytest
 import threading
 import os
 import sys
@@ -35,7 +36,7 @@ class LMRun(object):
         - Unittest模式：test_type为WEB/APP时使用
     """
 
-    def __init__(self, plan_tuple, run_index, default_result, default_lock, queue):
+    def __init__(self, test_case_list, run_index, default_result, default_lock, queue):
         """
             初始化测试执行器。
 
@@ -46,13 +47,13 @@ class LMRun(object):
                 default_lock (threading.Lock): 线程锁，确保多线程环境下的数据安全
                 queue (Queue): 结果队列，用于传递测试结果
         """
-        self.plan_tuple = plan_tuple  # 测试计划元组
-        self.run_index = run_index  # 执行轮次索引
-        self.default_result = default_result  # 共享结果列表
-        self.default_lock = default_lock  # 线程锁
-        self.queue = queue  # 结果队列
-        self.config = LMConfig()  # 配置对象
-        self.task_id = ""  # 任务ID，用于结果回传
+        self.test_case_tuple = test_case_list    # 一个测试集合
+        self.run_index = run_index      # 执行轮次索引
+        self.default_result = default_result    # 共享结果列表
+        self.default_lock = default_lock        # 线程锁
+        self.queue = queue          # 结果队列
+        self.config = LMConfig()    # 配置对象
+        self.task_id = ""           # 任务ID，用于结果回传
 
     def run_test(self):
         """
@@ -63,18 +64,15 @@ class LMRun(object):
             - WEB/APP类型：使用Unittest执行（原有逻辑）
         """
         # 检查测试类型，确定执行模式
-        test_types = set(case.get("test_type", "API") for case in self.plan_tuple)
+        test_types = set(case.get("test_type", "API") for case in self.test_case_tuple)
 
         # 获取task_id用于结果回传
-        if self.plan_tuple:
-            first_case = self.plan_tuple[0]
-            self.task_id = first_case.get("task_id", "")
+        if self.test_case_tuple:
+            self.task_id = self.test_case_tuple[0].get("task_id", "")
 
         if len(test_types) == 1 and "API" in test_types:
-            # 纯API测试，使用Pytest执行
             self._run_with_pytest()
         else:
-            # 包含WEB/APP测试，使用原有Unittest执行
             self._run_with_unittest()
 
     def _run_with_pytest(self):
@@ -84,16 +82,9 @@ class LMRun(object):
         调用pytest API执行测试，支持插件扩展。
         结果通过result queue回传给平台（原有机制）。
         """
-        try:
-            import pytest
-        except ImportError:
-            ErrorLogger("Pytest not installed, falling back to unittest")
-            self._run_with_unittest()
-            return
-
         # 准备测试目录和数据
         test_dirs = set()
-        for case in self.plan_tuple:
+        for case in self.test_case_tuple:
             case_data_path = case.get("test_data", "")
             if case_data_path and os.path.exists(case_data_path):
                 test_dirs.add(os.path.dirname(case_data_path))
@@ -146,7 +137,7 @@ class LMRun(object):
         suite = unittest.TestSuite()
 
         # 遍历测试计划，构建测试用例
-        for case in self.plan_tuple:
+        for case in self.test_case_tuple:
             cls_name = case["test_class"]  # 获取测试类名
             try:
                 # 获取已存在的测试类

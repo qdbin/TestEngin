@@ -171,8 +171,8 @@ class LMSetting(object):
                 # 使用线程池管理并发执行
                 with ThreadPoolExecutor(max_workers=max_thread) as t:
                     # 为每个测试集合创建执行任务
-                    executors = [t.submit(LMRun(test_case_list, index + 1, default_result, default_lock,
-                                                queue).run_test, ) for test_case_list in test_plan.values()]
+                    executors = [t.submit(LMRun(test_case_list, index + 1, default_result, default_lock,queue).run_test,)
+                                    for test_case_list in test_plan.values()]
                     as_completed(executors)  # 等待所有任务完成
 
         # 发送任务结束信号

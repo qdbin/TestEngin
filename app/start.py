@@ -25,20 +25,14 @@ class Start(object):
     """
 
     def __init__(self):
-        # 创建API通信客户端，用于与测试平台进行HTTP/WebSocket通信
         self.api = LMApi()
-
-        # 加载引擎配置信息，包括平台地址、引擎编码、密钥等
         self.config = LMConfig()
-
-        # 初始化执行进程管理字典，用于跟踪和管理正在执行的任务进程;
-        # 示例: {task_id: [run_process, report_process, upload_process]}
-        self.exec_processes = {}
+        self.exec_processes = {}    # 示例: {task_id: [run_process, report_process, upload_process]}
 
     def main(self):
         """
             引擎主入口方法
-            
+
             启动多线程和多进程架构，包括心跳监控、任务调度和测试执行等功能
         """
         # 创建消息队列，用于线程间传递控制消息（启动、停止、完成等）
@@ -65,19 +59,13 @@ class Start(object):
                 # 从任务队列获取任务，设置1秒超时避免无限阻塞
                 task = task_queue.get(True, 1)
             except:
-                # 队列为空或超时，继续下一次循环
                 continue
             else:
-                # 成功获取任务，记录日志并启动执行进程组
                 DebugLogger("接受任务成功 启动执行进程 任务id: %s" % task["taskId"])
 
-                # 创建用例结果队列，用于测试执行进程向结果上报进程传递数据
+                # 创建任务进程，负责具体的测试用例执行
                 case_result_queue = Queue()
-
-                # 创建共享执行状态变量：0-执行中，1-执行结束
                 current_exec_status = Value("i", 0)
-
-                # 创建测试执行进程，负责具体的测试用例执行
                 run_process = Process(target=self.run_test, args=(task, case_result_queue, current_exec_status))
                 run_process.start()
 
@@ -246,8 +234,7 @@ class Start(object):
         # 分析任务内容，生成详细的测试执行计划
         plan = s.task_analysis()
 
-        # 根据执行计划创建多线程执行测试用例
-        # 测试结果会通过queue传递给结果上报进程
+        # 根据执行计划创建多线程执行测试用例，测试结果会通过queue传递给结果上报进程
         s.create_thread(plan, queue, current_exec_status)
 
     @staticmethod
