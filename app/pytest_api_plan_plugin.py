@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 """
-Pytest 计划执行插件（方案二：动态收集 Item）。
+Pytest 任务目录执行插件（动态收集 Item）。
 
 职责：
-- 将执行进程生成的 .plan.json 在 pytest 收集阶段展开为多个用例 Item
+- 在 pytest 收集阶段通过 pytest_collection_file 从任务目录收集 case json
 - 在每个 Item 执行时调用 core/api 执行器（ApiTestCase），产出 transactionList
 - 组装平台协议 case_info 并通过 queue 实时回传给 Reporter
 
@@ -13,7 +13,6 @@ Pytest 计划执行插件（方案二：动态收集 Item）。
 - Allure 仅作为开发旁路能力，可开关且失败必须静默降级
 """
 
-import json
 import os
 import time
 import contextlib
@@ -23,29 +22,21 @@ import pytest
 
 from app.api_runtime import ApiRuntime
 from app.case_info_builder import CaseInfoBuildInput, build_case_info
+
 try:
     from core.api.testcase import ApiTestCase  # type: ignore
 except Exception:
     ApiTestCase = None
 
 
-class ApiPlanFile(pytest.File):
-    """
-    自定义 pytest 收集节点：负责读取 .plan.json 并生成用例 Item。
-
-    说明：
-    - .plan.json 由执行进程生成，不要求符合 pytest 默认文件命名规则
-    - 每条 case 会生成一个 ApiCaseItem，从而支持 pytest 的标准执行/报告机制
-    """
+class ApiCaseJsonFile(pytest.File):
+    def __init__(self, *args, descriptor: Dict[str, Any], **kwargs):
+        super().__init__(*args, **kwargs)
+        self.descriptor = descriptor
 
     def collect(self):
-        """读取计划文件并 yield 对应的 ApiCaseItem。"""
-        raw = self.fspath.read_text(encoding="utf-8")
-        plan = json.loads(raw)
-        cases = plan.get("cases") or []
-        for c in cases:
-            name = f'{c.get("collectionId")}/{c.get("caseId")}/{c.get("index")}'
-            yield ApiCaseItem.from_parent(self, name=name, descriptor=c)
+        name = f'{self.descriptor.get("collectionId")}/{self.descriptor.get("caseId")}/{self.descriptor.get("index")}'
+        yield ApiCaseItem.from_parent(self, name=name, descriptor=self.descriptor)
 
 
 class ApiCaseItem(pytest.Item):
@@ -81,7 +72,7 @@ class ApiPlanPlugin:
 
     运行方式：
     - pytest.main(..., plugins=[ApiPlanPlugin(...)] ) 注入
-    - pytest_collect_file 负责识别 .plan.json 并触发 ApiPlanFile.collect
+    - pytest_collect_file 负责识别任务目录内被索引的 case json 并触发收集
     - ApiCaseItem.runtest -> execute_case 执行业务逻辑并回传 case_info
     """
 
@@ -92,6 +83,7 @@ class ApiPlanPlugin:
         shared_by_collection: Dict[str, Dict[str, Any]],
         run_times: int,
         default_result: List[Dict[str, Any]],
+        descriptors_by_path: Dict[str, Dict[str, Any]],
         allure_enabled: bool = False,
         allure_dir: Optional[str] = None,
     ):
@@ -99,13 +91,19 @@ class ApiPlanPlugin:
         self.shared_by_collection = shared_by_collection
         self.run_times = int(run_times)
         self.default_result = default_result
+        self.descriptors_by_path = descriptors_by_path
         self.allure_enabled = bool(allure_enabled)
         self.allure_dir = allure_dir
 
     def pytest_collect_file(self, parent, path):
-        """收集阶段：识别 .plan.json 并返回自定义 File 节点。"""
-        if str(path).endswith(".plan.json"):
-            return ApiPlanFile.from_parent(parent, fspath=path)
+        file_path = os.path.normcase(os.path.abspath(str(path)))
+        if not str(path).lower().endswith(".json"):
+            return None
+        descriptor = self.descriptors_by_path.get(file_path)
+        if descriptor is not None:
+            return ApiCaseJsonFile.from_parent(
+                parent, fspath=path, descriptor=descriptor
+            )
         return None
 
     def pytest_sessionstart(self, session):
@@ -162,7 +160,7 @@ class ApiPlanPlugin:
             raise RuntimeError(f"collection shared missing: {collection_id}")
         session = shared["session"]  # collection 级共享 session（保持与旧引擎一致）
         context = shared["context"]  # collection 级共享 context（保持与旧引擎一致）
-        test_data = desc.get("debugData") if desc.get("debugData") is not None else desc.get("casePath")
+        test_data = desc.get("casePath")
 
         runtime = ApiRuntime(
             task_id=task_id,
@@ -195,8 +193,16 @@ class ApiPlanPlugin:
             runtime.stop()
 
         status = runtime.handleResult()
-        start_ms = int(runtime.start_time.timestamp() * 1000) if runtime.start_time else runtime.now_ms()
-        end_ms = int(runtime.stop_time.timestamp() * 1000) if runtime.stop_time else runtime.now_ms()
+        start_ms = (
+            int(runtime.start_time.timestamp() * 1000)
+            if runtime.start_time
+            else runtime.now_ms()
+        )
+        end_ms = (
+            int(runtime.stop_time.timestamp() * 1000)
+            if runtime.stop_time
+            else runtime.now_ms()
+        )
 
         case_info = build_case_info(
             CaseInfoBuildInput(

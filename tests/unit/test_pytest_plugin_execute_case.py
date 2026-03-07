@@ -30,13 +30,21 @@ def test_execute_case_success(monkeypatch, fake_queue):
     from app import pytest_api_plan_plugin as mod
 
     monkeypatch.setattr(mod, "ApiTestCase", FakeApiTestCase)
-    monkeypatch.setattr(mod, "replay_case_to_allure", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("should not be called")), raising=False)
+    monkeypatch.setattr(
+        mod,
+        "replay_case_to_allure",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("should not be called")
+        ),
+        raising=False,
+    )
 
     plugin = ApiPlanPlugin(
         queue=fake_queue,
         shared_by_collection={"c1": {"session": object(), "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=False,
         allure_dir=None,
     )
@@ -48,7 +56,6 @@ def test_execute_case_success(monkeypatch, fake_queue):
             "index": 1,
             "caseType": "API",
             "casePath": "{}",
-            "debugData": None,
         }
     )
     assert len(plugin.default_result) == 1
@@ -66,13 +73,18 @@ def test_execute_case_allure_failure_does_not_break(monkeypatch, fake_queue):
 
     import app.allure_replay as ar
 
-    monkeypatch.setattr(ar, "replay_case_to_allure", lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")))
+    monkeypatch.setattr(
+        ar,
+        "replay_case_to_allure",
+        lambda *_a, **_k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
 
     plugin = ApiPlanPlugin(
         queue=fake_queue,
         shared_by_collection={"c1": {"session": object(), "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=True,
         allure_dir=None,
     )
@@ -84,7 +96,6 @@ def test_execute_case_allure_failure_does_not_break(monkeypatch, fake_queue):
             "index": 1,
             "caseType": "API",
             "casePath": "{}",
-            "debugData": None,
         }
     )
     assert plugin.default_result[0]["status"] == 0
@@ -98,6 +109,7 @@ def test_execute_case_skip_non_api(fake_queue):
         shared_by_collection={"c1": {"session": object(), "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=False,
         allure_dir=None,
     )
@@ -109,7 +121,6 @@ def test_execute_case_skip_non_api(fake_queue):
             "index": 1,
             "caseType": "WEB",
             "casePath": None,
-            "debugData": None,
         }
     )
     assert plugin.default_result[0]["status"] == 3

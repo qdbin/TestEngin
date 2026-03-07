@@ -4,7 +4,7 @@ from __future__ import annotations
 pytest 执行入口封装。
 
 职责：
-- 将 plan.json 交由 pytest 运行
+- 将任务目录交由 pytest 运行
 - 注入 ApiPlanPlugin，在 pytest 执行过程中持续产出 case_info 到队列
 
 注意：
@@ -20,16 +20,17 @@ from app.pytest_api_plan_plugin import ApiPlanPlugin
 
 def run_api_plan(
     *,
-    plan_path: str,
+    task_dir: str,
     queue: Any,
     shared_by_collection: Dict[str, Dict[str, Any]],
     run_times: int,
     default_result: List[Dict[str, Any]],
+    descriptors_by_path: Dict[str, Dict[str, Any]],
     allure_enabled: bool = False,
     allure_dir: Optional[str] = None,
 ) -> int:
     """
-    执行指定 plan.json。
+    执行指定任务目录。
 
     参数约束：
     - queue: 与 LMReport.monitor_result 同协议（put(case_info) / put(control_message)）
@@ -44,10 +45,11 @@ def run_api_plan(
         shared_by_collection=shared_by_collection,
         run_times=run_times,
         default_result=default_result,
+        descriptors_by_path=descriptors_by_path,
         allure_enabled=allure_enabled,
         allure_dir=allure_dir,
     )
-    args = [plan_path, "-q"]
+    args = [task_dir, "-q"]
     if allure_enabled and allure_dir:
         try:
             # Allure 仅作为开发旁路能力：存在插件则输出结果目录，不存在则静默忽略。

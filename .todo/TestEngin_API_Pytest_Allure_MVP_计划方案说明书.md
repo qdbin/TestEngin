@@ -1,4 +1,4 @@
-# TestEngin（仅API）Pytest+Allure 重构：MVP计划方案说明书
+# TestEngin（仅 API）Pytest+Allure 重构：MVP 计划方案说明书
 
 ## 1. 目标与范围
 
@@ -76,31 +76,31 @@ AllureReporter 作为“旁路观察者”，监听 Runtime 事件或基于 `tra
 
 ### 3.2 API-only 执行链路（高层数据流）
 
-1) fetch_task（HTTP）获取 task
-2) data_pull + unzip（本地）得到 case json
-3) 构建 `case_descriptor_list`（一条用例一条描述）
-4) 运行 pytest：
-   - 收集阶段：把每条 descriptor 转成一个 pytest Item（方案二）
-   - 执行阶段：Item.run 调用 `core/api` 执行器，产出 transactionList
+1. fetch_task（HTTP）获取 task
+2. data_pull + unzip（本地）得到 case json
+3. 构建 `case_descriptor_list`（一条用例一条描述）
+4. 运行 pytest：
+   - 收集阶段：基于 `pytest_collection_file` 从任务目录收集 case json（每个 json=一个用例）
+   - 执行阶段：Item.run 调用 `core/api` 执行器，按用例内部 `apiList` 顺序执行多个接口步骤并产出 transactionList
    - 结束阶段：组装 `case_info` 并实时推送 queue
-5) Reporter 进程批量 upload_result，最后 complete_task
+5. Reporter 进程批量 upload_result，最后 complete_task
 
 ---
 
 ## 4. MVP 技术路线选择（默认最贴合本项目）
 
-### 4.1 执行路线：优先采用“方案二：pytest 插件动态收集 Item”，但做成最小闭环
+### 4.1 执行路线：采用“pytest_collection_file + 任务目录驱动收集”
 
 选择理由：
 
 - 平台是“数据驱动（JSON）+ 引擎执行”的模式，pytest Item 动态收集更贴合企业执行内核做法；
 - 更利于后续扩展：过滤、标签、按 collection 分组、引入 xdist 分发等；
-- 以 `--plan` 指定计划文件，避免扫描目录造成误收集，适合引擎集成。
+- 真实业务数据天然是“任务目录/集合目录/用例 json”结构，直接按目录收集可消除中间协议偏差。
 
 MVP 复杂度控制策略：
 
-- 不实现复杂的 Collector 树，仅实现一个 PlanCollector（读取 plan.json）并生成 Items；
-- Items 的 metadata 直接来自 plan.json（taskId/collectionId/caseId/index/jsonPath 等），不需要解析平台全部字段；
+- 不实现复杂 Collector 树，仅实现一个 TaskDirCollector（读取任务目录中被索引的 case json）；
+- Items 的 metadata 来自“任务目录扫描结果 + task 元数据映射（index/caseType）”，避免再定义 plan.json 中间协议；
 - 先保证“可执行+可上报+可停止”闭环，后续再做性能与并行增强。
 
 ### 4.2 Allure 路线：MVP 先使用“方式二：执行后回放 transactionList”为主，预留方式一演进点
@@ -135,31 +135,31 @@ MVP 复杂度控制策略：
 - `errors`（失败/错误列表，含类型、消息、堆栈摘要）
 - `status`（0/1/2/3）
 
-### 5.2 Pytest 插件（Plan -> Items）
+### 5.2 Pytest 插件（TaskDir -> Items）
 
 #### 5.2.1 CLI 入口
 
-- `--plan=PATH`：计划文件路径（由引擎生成）
-- `--task-id=ID`：便于日志与隔离（可选）
-- `--allure=on/off`：Allure 开关（可选）
+- 位置参数：`TASK_DIR`（任务根目录，形如 `data/{taskId}`）
+- 可选参数：`--allure=on/off`（仅旁路报告开关）
 
 #### 5.2.2 收集策略（MVP）
 
-- 在 collection 阶段读取 plan.json，生成 N 个 Items：
+- 在 collection 阶段通过 `pytest_collection_file` 处理 `.json` 文件：
+  - 仅收集“任务索引里存在”的用例文件，避免误收集无关 json
+  - 一个 case json 生成一个 Item；一个 Item 内部执行该用例的全部 `apiList`
   - Item 名称包含 `collectionId/caseId/index`，便于定位与 stop/重跑
-  - Item 持有 descriptor（jsonPath/debugData）
 
 #### 5.2.3 执行策略（MVP）
 
 Item.run 过程：
 
-1) 创建/获取 collection 级共享对象：
+1. 创建/获取 collection 级共享对象：
    - `session` 与 `context` 复用策略与现有一致（collection 内共享）
-2) 构造 Runtime，加载 case json（或 debugData）
-3) 调用 `core/api` 执行器（保持现有执行逻辑）
-4) Runtime.handleResult 计算最终 status
-5) 组装 `case_info` 并推送到结果队列（供 Reporter 进程上传平台）
-6) 若失败/错误：抛出 pytest 断言异常，使 pytest 结果与平台一致（平台仍以 case_info 为准）
+2. 构造 Runtime，加载 case json（debug 场景则写入临时 json 后走同一链路）
+3. 调用 `core/api` 执行器（保持现有执行逻辑）
+4. Runtime.handleResult 计算最终 status
+5. 组装 `case_info` 并推送到结果队列（供 Reporter 进程上传平台）
+6. 若失败/错误：抛出 pytest 断言异常，使 pytest 结果与平台一致（平台仍以 case_info 为准）
 
 ### 5.3 平台结果回传（保持不变）
 
@@ -178,25 +178,21 @@ Item.run 过程：
 
 ---
 
-## 6. 计划文件（plan.json）规范（MVP）
+## 6. 任务目录索引（Task Descriptor Index）规范（MVP）
 
-引擎在任务执行进程生成 plan.json，建议最小结构：
+引擎在任务执行进程生成“内存索引”，不再写入 plan.json 文件。最小结构建议：
 
 ```json
 {
   "taskId": "T123",
-  "collections": [
+  "taskDir": "data/T123",
+  "cases": [
     {
       "collectionId": "C1",
-      "cases": [
-        {
-          "caseId": "100",
-          "index": 1,
-          "caseType": "API",
-          "caseName": "登录接口",
-          "casePath": "data/T123/C1/100.json"
-        }
-      ]
+      "caseId": "100",
+      "index": 1,
+      "caseType": "API",
+      "casePath": "data/T123/C1/100.json"
     }
   ]
 }
@@ -204,8 +200,10 @@ Item.run 过程：
 
 说明：
 
-- 该 plan.json 是“引擎内部协议”，不需要平台参与修改；
-- 为后续过滤/重跑/并行分发预留扩展字段：tags、priority、retry、timeout、resourceProfile 等。
+- 索引仅用于本次执行进程内收集与过滤，不作为平台协议；
+- `casePath` 必须指向真实存在的用例 json，保证“一个文件=一个用例”；
+- debug 任务将 `debugData` 物化为临时 json，再纳入同一索引与收集链路；
+- 后续并行可在该索引上扩展 tags、priority、retry、timeout 等字段。
 
 ---
 
@@ -242,9 +240,9 @@ TestEngin/
   - recordFail/recordError + handleResult 的状态计算（0/1/2）
   - transactionList 组装完整性
 - PlanBuilder：
-  - task -> plan.json 的映射正确（collection 分组、路径正确）
+  - task + 任务目录扫描 -> descriptor index 映射正确（collection/case/path/index 正确）
 - Pytest 插件：
-  - `--plan` 能收集正确数量的 Items（`--collect-only`）
+  - `TASK_DIR` 下能收集正确数量的 case Items（`--collect-only`）
   - Item 执行能调用到 API 执行器（用 fake 执行器或 mock）
 - Reporter：
   - 3 秒批量窗口与 stop flush 行为（mock LMApi.upload_result/complete_task）
@@ -266,17 +264,17 @@ TestEngin/
 
 ### 8.1 里程碑
 
-1) MVP-0：完成 Runtime 抽象与状态计算（不引入 pytest）
-2) MVP-1：引擎生成 plan.json；pytest 插件能 collect Items（`--collect-only` 可用）
-3) MVP-2：Items 执行调用 `core/api`，实时生成 `case_info` 并通过现有 Reporter 上传平台
-4) MVP-3：Allure 回放报告可选输出（开关控制，不影响平台上报）
-5) MVP-4：补齐单元测试与基本覆盖率门槛（建议 70%+，优先覆盖核心链路）
+1. MVP-0：完成 Runtime 抽象与状态计算（不引入 pytest）
+2. MVP-1：引擎完成任务目录扫描与 descriptor index 构建；pytest 插件能 collect Items（`--collect-only` 可用）
+3. MVP-2：Items 执行调用 `core/api`，实时生成 `case_info` 并通过现有 Reporter 上传平台
+4. MVP-3：Allure 回放报告可选输出（开关控制，不影响平台上报）
+5. MVP-4：补齐单元测试与基本覆盖率门槛（建议 70%+，优先覆盖核心链路）
 
 ### 8.2 代办清单（供后续编码实现参考）
 
-- 抽象 Runtime：替代 unittest._outcome，保留 core/api 依赖的方法签名
-- 新增 plan.json 生成逻辑：从现有 task_analysis/test_plan 转换为 descriptor
-- 新增 pytest 插件：支持 `--plan`，收集 Items，执行并上报
+- 抽象 Runtime：替代 unittest.\_outcome，保留 core/api 依赖的方法签名
+- 新增任务目录索引构建逻辑：扫描 `data/{taskId}/{collectionId}/*.json` 并合并 task 元信息
+- 新增 pytest 插件：基于 `pytest_collection_file` 收集任务目录中的 case json，执行并上报
 - 复用/适配现有 Reporter：保持平台上传协议不变
 - 新增 AllureReporter：实现 transactionList 回放 + attach
 - 建立 tests 体系：unit 优先，mock 网络与副作用
@@ -315,4 +313,3 @@ TestEngin/
 - 引擎侧 Pytest 输出可读（最少能定位到 collectionId/caseId/index）。
 - Allure 可选开启：生成报告并包含 transactionList 与日志附件；关闭时不产生任何副作用。
 - 单元测试可运行：不需要平台服务、不需要网络、不依赖真实配置；核心模块覆盖到位。
-

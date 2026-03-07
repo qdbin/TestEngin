@@ -9,11 +9,14 @@ API Core 集成测试（不依赖平台/不发真实网络）。
 - 所有网络/DB/平台调用均通过 monkeypatch 替换为 fake
 """
 
+import json
+
 import pytest
 
 
 class _FakeCookies:
     """模拟 requests.cookies，用于 save_response 中 cookies.items() 遍历。"""
+
     def __init__(self, data=None):
         self._data = dict(data or {})
 
@@ -23,7 +26,10 @@ class _FakeCookies:
 
 class _FakeResponse:
     """模拟 requests.Response，仅实现本项目会用到的最小接口。"""
-    def __init__(self, *, status_code=200, headers=None, json_data=None, text="OK", content=b"OK"):
+
+    def __init__(
+        self, *, status_code=200, headers=None, json_data=None, text="OK", content=b"OK"
+    ):
         self.status_code = status_code
         self.headers = dict(headers or {})
         self._json_data = json_data
@@ -40,6 +46,7 @@ class _FakeResponse:
 
 class _SessionHolder:
     """对齐 LMSession：持有一个 .session 对象供 ApiTestStep 调用。"""
+
     def __init__(self, inner):
         self.session = inner
 
@@ -74,6 +81,12 @@ def _make_case(*, controller, assertions=None, relations=None):
     }
 
 
+def _write_case_file(tmp_path, case):
+    case_path = tmp_path / "case.json"
+    case_path.write_text(json.dumps(case, ensure_ascii=False), encoding="utf-8")
+    return str(case_path)
+
+
 @pytest.mark.integration
 @pytest.mark.parametrize(
     "use_session,save_session",
@@ -84,7 +97,9 @@ def _make_case(*, controller, assertions=None, relations=None):
         ("false", "false"),
     ],
 )
-def test_api_core_session_branches_execute_without_network(monkeypatch, fake_queue, use_session, save_session):
+def test_api_core_session_branches_execute_without_network(
+    monkeypatch, fake_queue, tmp_path, use_session, save_session
+):
     """
     覆盖 ApiTestStep.execute 中 useSession/saveSession 的四种分支：
     - use+save: self.session.session.request
@@ -102,13 +117,17 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
         def request(self, method, url, **kwargs):
             # useSession=true & saveSession=true 分支会走到这里
             call["use_save"] += 1
-            return _FakeResponse(status_code=200, json_data={"ok": True}, content=b'{"ok":true}')
+            return _FakeResponse(
+                status_code=200, json_data={"ok": True}, content=b'{"ok":true}'
+            )
 
     class _InnerCopy:
         def request(self, method, url, **kwargs):
             # useSession=true & saveSession=false 分支会走到这里（deepcopy 后请求）
             call["use_only"] += 1
-            return _FakeResponse(status_code=200, json_data={"ok": True}, content=b'{"ok":true}')
+            return _FakeResponse(
+                status_code=200, json_data={"ok": True}, content=b'{"ok":true}'
+            )
 
     def _fake_deepcopy(obj):
         return _InnerCopy()
@@ -117,7 +136,11 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
         def request(self, method, url, **kwargs):
             # useSession=false & saveSession=true 分支会走到这里，并回写 holder.session
             call["save_only"] += 1
-            return _FakeResponse(status_code=200, headers={"Content-Disposition": "attachment"}, content=b"x" * 10)
+            return _FakeResponse(
+                status_code=200,
+                headers={"Content-Disposition": "attachment"},
+                content=b"x" * 10,
+            )
 
     def _fake_request(method, url, **kwargs):
         # useSession=false & saveSession=false 分支会走到这里（requests.request）
@@ -134,6 +157,7 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
         shared_by_collection={"c1": {"session": holder, "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=False,
         allure_dir=None,
     )
@@ -149,6 +173,7 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
             "errorContinue": "false",
         }
     )
+    case_path = _write_case_file(tmp_path, case)
 
     plugin.execute_case(
         {
@@ -157,8 +182,7 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
             "caseId": "100",
             "index": 1,
             "caseType": "API",
-            "casePath": None,
-            "debugData": case,
+            "casePath": case_path,
         }
     )
 
@@ -166,18 +190,40 @@ def test_api_core_session_branches_execute_without_network(monkeypatch, fake_que
     assert len(fake_queue.items) == 1
 
     if use_session == "true" and save_session == "true":
-        assert call["use_save"] == 1 and call["use_only"] == 0 and call["save_only"] == 0 and call["none"] == 0
+        assert (
+            call["use_save"] == 1
+            and call["use_only"] == 0
+            and call["save_only"] == 0
+            and call["none"] == 0
+        )
     elif use_session == "true" and save_session == "false":
-        assert call["use_only"] == 1 and call["use_save"] == 0 and call["save_only"] == 0 and call["none"] == 0
+        assert (
+            call["use_only"] == 1
+            and call["use_save"] == 0
+            and call["save_only"] == 0
+            and call["none"] == 0
+        )
     elif use_session == "false" and save_session == "true":
-        assert call["save_only"] == 1 and call["use_save"] == 0 and call["use_only"] == 0 and call["none"] == 0
+        assert (
+            call["save_only"] == 1
+            and call["use_save"] == 0
+            and call["use_only"] == 0
+            and call["none"] == 0
+        )
         assert isinstance(holder.session, _NewSession)
     else:
-        assert call["none"] == 1 and call["use_save"] == 0 and call["use_only"] == 0 and call["save_only"] == 0
+        assert (
+            call["none"] == 1
+            and call["use_save"] == 0
+            and call["use_only"] == 0
+            and call["save_only"] == 0
+        )
 
 
 @pytest.mark.integration
-def test_api_core_condition_skip_marks_transaction_skip(monkeypatch, fake_queue):
+def test_api_core_condition_skip_marks_transaction_skip(
+    monkeypatch, fake_queue, tmp_path
+):
     """
     覆盖 ApiTestCase.loop_execute 中 “条件控制器为否 -> 跳过接口执行” 分支：
     - 该分支应当写入 transaction.status=3
@@ -197,6 +243,7 @@ def test_api_core_condition_skip_marks_transaction_skip(monkeypatch, fake_queue)
         shared_by_collection={"c1": {"session": holder, "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=False,
         allure_dir=None,
     )
@@ -213,6 +260,7 @@ def test_api_core_condition_skip_marks_transaction_skip(monkeypatch, fake_queue)
             "whetherExec": '[{"assertion":"相等","target":"1","expect":"2"}]',
         }
     )
+    case_path = _write_case_file(tmp_path, case)
 
     plugin.execute_case(
         {
@@ -221,8 +269,7 @@ def test_api_core_condition_skip_marks_transaction_skip(monkeypatch, fake_queue)
             "caseId": "100",
             "index": 1,
             "caseType": "API",
-            "casePath": None,
-            "debugData": case,
+            "casePath": case_path,
         }
     )
 
@@ -232,7 +279,9 @@ def test_api_core_condition_skip_marks_transaction_skip(monkeypatch, fake_queue)
 
 
 @pytest.mark.integration
-def test_api_core_assertion_failure_marks_case_failed(monkeypatch, fake_queue):
+def test_api_core_assertion_failure_marks_case_failed(
+    monkeypatch, fake_queue, tmp_path
+):
     """
     覆盖断言失败路径：
     - ApiTestStep.check 生成 assert_result=False
@@ -243,7 +292,9 @@ def test_api_core_assertion_failure_marks_case_failed(monkeypatch, fake_queue):
     import core.api.teststep as step_mod
 
     def _fake_request(method, url, **kwargs):
-        return _FakeResponse(status_code=200, json_data={"code": 0}, content=b'{"code":0}')
+        return _FakeResponse(
+            status_code=200, json_data={"code": 0}, content=b'{"code":0}'
+        )
 
     monkeypatch.setattr(step_mod, "request", _fake_request)
 
@@ -253,6 +304,7 @@ def test_api_core_assertion_failure_marks_case_failed(monkeypatch, fake_queue):
         shared_by_collection={"c1": {"session": holder, "context": {}}},
         run_times=1,
         default_result=[],
+        descriptors_by_path={},
         allure_enabled=False,
         allure_dir=None,
     )
@@ -268,9 +320,16 @@ def test_api_core_assertion_failure_marks_case_failed(monkeypatch, fake_queue):
             "errorContinue": "false",
         },
         assertions=[
-            {"assertion": "相等", "from": "resCode", "method": "jsonpath", "expression": "$", "expect": "201"}
+            {
+                "assertion": "相等",
+                "from": "resCode",
+                "method": "jsonpath",
+                "expression": "$",
+                "expect": "201",
+            }
         ],
     )
+    case_path = _write_case_file(tmp_path, case)
 
     with pytest.raises(AssertionError):
         plugin.execute_case(
@@ -280,8 +339,7 @@ def test_api_core_assertion_failure_marks_case_failed(monkeypatch, fake_queue):
                 "caseId": "100",
                 "index": 1,
                 "caseType": "API",
-                "casePath": None,
-                "debugData": case,
+                "casePath": case_path,
             }
         )
 

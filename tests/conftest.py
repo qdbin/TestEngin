@@ -7,6 +7,7 @@ pytest 全局测试配置（TestEngin）。
 """
 
 import os
+import re
 import sys
 import types
 
@@ -111,7 +112,11 @@ def ensure_jsonpath_available():
     def _jsonpath(data, expression):
         if expression == "$":
             return [data]
-        if isinstance(expression, str) and expression.startswith("$.") and isinstance(data, dict):
+        if (
+            isinstance(expression, str)
+            and expression.startswith("$.")
+            and isinstance(data, dict)
+        ):
             key = expression[2:]
             if key in data:
                 return [data[key]]
@@ -119,6 +124,55 @@ def ensure_jsonpath_available():
 
     m.jsonpath = _jsonpath
     sys.modules["jsonpath"] = m
+
+
+@pytest.fixture(scope="session", autouse=True)
+def ensure_jsonpath_ng_available():
+    try:
+        from jsonpath_ng.parser import JsonPathParser  # noqa: F401
+
+        return
+    except Exception:
+        pass
+
+    if "jsonpath_ng.parser" in sys.modules:
+        return
+
+    class _Expr:
+        def __init__(self, tokens):
+            self.tokens = tokens
+
+        def update(self, data, value):
+            if data is None:
+                return
+            cur = data
+            for token in self.tokens[:-1]:
+                if isinstance(cur, dict):
+                    cur = cur.setdefault(token, {})
+                else:
+                    return
+            if self.tokens and isinstance(cur, dict):
+                cur[self.tokens[-1]] = value
+
+    class JsonPathParser:
+        def parse(self, expression):
+            if expression == "$":
+                return _Expr([])
+            tokens = re.findall(r"'([^']+)'", str(expression))
+            if (
+                not tokens
+                and isinstance(expression, str)
+                and expression.startswith("$.")
+            ):
+                tokens = [x for x in expression[2:].split(".") if x]
+            return _Expr(tokens)
+
+    parser_module = types.ModuleType("jsonpath_ng.parser")
+    parser_module.JsonPathParser = JsonPathParser
+    pkg_module = types.ModuleType("jsonpath_ng")
+    pkg_module.parser = parser_module
+    sys.modules["jsonpath_ng"] = pkg_module
+    sys.modules["jsonpath_ng.parser"] = parser_module
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -194,7 +248,4 @@ def ensure_pypinyin_available():
 
 @pytest.fixture
 def tmp_data_dir(tmp_path, monkeypatch):
-    from app import plan_builder
-
-    monkeypatch.setattr(plan_builder, "DATA_PATH", str(tmp_path))
     return tmp_path
