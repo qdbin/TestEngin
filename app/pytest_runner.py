@@ -32,13 +32,38 @@ def run_api_plan(
     """
     执行指定任务目录。
 
-    参数约束：
-    - queue: 与 LMReport.monitor_result 同协议（put(case_info) / put(control_message)）
-    - shared_by_collection: 与原引擎一致的 session/context 共享结构
-    - default_result: 作为 create_thread 的结果聚合容器（用于 reRun 重跑判定）
+    Args:
+        task_dir: 任务根目录（包含 collection 子目录与 case json 文件）。
+        queue: 结果通道，协议与 LMReport.monitor_result 一致。
+        shared_by_collection: collection 级共享运行时对象映射。
+        run_times: 当前执行轮次（首跑=1，重跑=2...）。
+        default_result: 当前轮次内存结果容器（供重跑筛选失败用例）。
+        descriptors_by_path: casePath -> descriptor 的收集索引。
+        allure_enabled: 是否开启 Allure 旁路回放。
+        allure_dir: Allure 结果目录（仅在启用时生效）。
 
-    返回：
-    - pytest exit code（0 表示执行过程未出现 pytest 级别错误）
+    shared_by_collection Schema:
+        {
+            "collectionId": {
+                "session": "<requests.Session>",
+                "context": {"k": "v"}
+            }
+        }
+
+    descriptors_by_path Schema:
+        {
+            "D:/task/collectionA/case_001.json": {
+                "taskId": "task_xxx",
+                "collectionId": "collectionA",
+                "caseId": "case_001",
+                "index": 1,
+                "caseType": "API",
+                "casePath": "D:/task/collectionA/case_001.json"
+            }
+        }
+
+    Returns:
+        pytest exit code（0 表示执行过程未出现 pytest 级别错误）。
     """
     plugin = ApiPlanPlugin(
         queue=queue,

@@ -43,6 +43,21 @@ def build_case_info(i: CaseInfoBuildInput, status: int) -> Dict[str, Any]:
     - status: 0成功/1失败/2错误/3跳过
     - startTime/endTime: 毫秒时间戳
     - transactionList: 事务步骤列表（用于展示与排障）
+
+    返回 Schema:
+        {
+            "status": 0,
+            "startTime": 1710000000000,
+            "endTime": 1710000001234,
+            "collectionId": "collection_xxx",
+            "caseId": "case_xxx",
+            "caseType": "API",
+            "caseName": "用户登录",
+            "caseDesc": "描述",
+            "index": 1,
+            "runTimes": 1,
+            "transactionList": []
+        }
     """
     return {
         "status": int(status),

@@ -30,11 +30,20 @@ except Exception:
 
 
 class ApiCaseJsonFile(pytest.File):
+    """单个 case json 文件节点，对应一个可执行的 ApiCaseItem。"""
+
     def __init__(self, *args, descriptor: Dict[str, Any], **kwargs):
         super().__init__(*args, **kwargs)
         self.descriptor = descriptor
 
     def collect(self):
+        """
+        将 descriptor 转为单个 Item。
+
+        说明：
+        - 当前业务约束为“一个 case json = 一个用例”。
+        - name 统一包含 collectionId/caseId/index，便于排障和定位。
+        """
         name = f'{self.descriptor.get("collectionId")}/{self.descriptor.get("caseId")}/{self.descriptor.get("index")}'
         yield ApiCaseItem.from_parent(self, name=name, descriptor=self.descriptor)
 
@@ -87,6 +96,16 @@ class ApiPlanPlugin:
         allure_enabled: bool = False,
         allure_dir: Optional[str] = None,
     ):
+        """
+        Args:
+            queue: 用例结果回传队列（与 Reporter 协议保持一致）。
+            shared_by_collection: collection 级共享对象（session/context）。
+            run_times: 当前执行轮次（用于回传 runTimes 字段）。
+            default_result: 当前轮次结果内存缓存（用于重跑筛选）。
+            descriptors_by_path: case json 绝对路径索引。
+            allure_enabled: 是否启用 Allure 旁路回放。
+            allure_dir: Allure 输出目录。
+        """
         self.queue = queue
         self.shared_by_collection = shared_by_collection
         self.run_times = int(run_times)
@@ -96,6 +115,14 @@ class ApiPlanPlugin:
         self.allure_dir = allure_dir
 
     def pytest_collect_file(self, parent, path):
+        """
+        pytest 文件收集钩子。
+
+        收集策略：
+        - 仅处理 .json 文件
+        - 仅处理出现在 descriptors_by_path 索引内的 json
+          （保证只执行当前任务计划中的用例文件）
+        """
         file_path = os.path.normcase(os.path.abspath(str(path)))
         if not str(path).lower().endswith(".json"):
             return None
@@ -124,6 +151,16 @@ class ApiPlanPlugin:
         注意：
         - 该方法是引擎与 pytest 的“连接点”，负责把核心执行器输出转换为平台协议
         - 失败/错误最终会 raise AssertionError，使 pytest 侧也能体现失败（平台仍以 case_info 为准）
+
+        desc Schema:
+        {
+            "taskId": "task_xxx",
+            "collectionId": "collection_xxx",
+            "caseId": "case_xxx",
+            "index": 1,
+            "caseType": "API",
+            "casePath": "D:/task/collection/case_xxx.json"
+        }
         """
         task_id = str(desc.get("taskId"))
         collection_id = str(desc.get("collectionId"))

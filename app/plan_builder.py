@@ -61,6 +61,18 @@ def build_descriptors_from_test_plan(
     """
     将 task_analysis 产物（collection -> cases）映射为 CaseDescriptor 列表。
 
+    test_plan Schema:
+        {
+            "collectionA": [
+                {
+                    "task_id": "task_xxx",
+                    "test_type": "API",
+                    "test_case": "case_7e471c1f_1",
+                    "test_data": "D:/task/collectionA/7e471c1f.json"
+                }
+            ]
+        }
+
     说明：
     - 输出顺序保持与输入一致，便于平台侧 index 展示与重跑定位
     """
@@ -85,10 +97,14 @@ def build_descriptor_index(
 ) -> Dict[str, Dict[str, Any]]:
     """
     构建按 casePath 索引的 descriptor 映射。
+
+    Returns:
+        以“标准化后的绝对路径”为 key 的映射，用于 pytest 收集阶段 O(1) 过滤。
     """
     result: Dict[str, Dict[str, Any]] = {}
     for desc in descriptors:
         if not desc.case_path:
+            # 关键步骤：忽略缺失 case_path 的 descriptor，避免污染收集索引。
             continue
         key = os.path.normcase(os.path.abspath(str(desc.case_path)))
         result[key] = desc.to_dict()

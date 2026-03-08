@@ -30,22 +30,39 @@ def replay_case_to_allure(case_info: Dict[str, Any]) -> None:
     """
     将 case_info.transactionList 回放为 Allure step/附件。
 
-    输入：
-    - case_info: 平台回传结构（本函数只读取必要字段）
+    Args:
+        case_info: 平台回传的单条用例结果字典。
 
-    输出：
-    - 无返回值；Allure 缺失或写入失败会被吞掉，不影响主流程
+    case_info Schema（最小子集）:
+        {
+            "caseId": "case_xxx",
+            "caseName": "用户登录",
+            "transactionList": [
+                {
+                    "id": "api_1",
+                    "name": "登录接口",
+                    "content": "/login",
+                    "log": "xxxx"
+                }
+            ]
+        }
+
+    Returns:
+        None。Allure 缺失或写入失败时静默降级，不影响主流程。
     """
+    # 关键步骤1：先尝试加载 Allure；如果环境未安装，直接 no-op。
     allure = _try_import_allure()
     if allure is None:
         return
 
+    # 关键步骤2：设置用例标题，失败时吞掉异常，避免影响平台主链路。
     title = case_info.get("caseName") or f'{case_info.get("caseId")}'
     try:
         allure.dynamic.title(title)
     except Exception:
         pass
 
+    # 关键步骤3：逐个事务回放成 Allure step，并附带日志/内容附件。
     trans_list = case_info.get("transactionList") or []
     for trans in trans_list:
         name = trans.get("name") or trans.get("id") or "step"
@@ -53,13 +70,22 @@ def replay_case_to_allure(case_info: Dict[str, Any]) -> None:
             with allure.step(str(name)):
                 log = trans.get("log") or ""
                 if log:
-                    allure.attach(str(log), name="log", attachment_type=allure.attachment_type.HTML)
+                    allure.attach(
+                        str(log),
+                        name="log",
+                        attachment_type=allure.attachment_type.HTML,
+                    )
                 content = trans.get("content")
                 if content:
-                    allure.attach(str(content), name="content", attachment_type=allure.attachment_type.TEXT)
+                    allure.attach(
+                        str(content),
+                        name="content",
+                        attachment_type=allure.attachment_type.TEXT,
+                    )
         except Exception:
             continue
 
+    # 关键步骤4：附加完整 transactionList 快照，便于离线排障。
     try:
         allure.attach(
             json.dumps(trans_list, ensure_ascii=False),
