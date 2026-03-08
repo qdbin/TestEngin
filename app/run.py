@@ -17,11 +17,10 @@ import unittest
 import pytest
 import threading
 import os
-import sys
-import datetime
 from app import case, result
 from app.log import ErrorLogger, DebugLogger
 from app.config import LMConfig
+from app import json_collector, pytest_hooks
 
 
 class LMRun(object):
@@ -38,22 +37,22 @@ class LMRun(object):
 
     def __init__(self, test_case_list, run_index, default_result, default_lock, queue):
         """
-            初始化测试执行器。
+        初始化测试执行器。
 
-            Args:
-                plan_tuple (list): 测试计划列表，包含要执行的测试用例信息
-                run_index (int): 当前执行轮次索引
-                default_result (list): 共享的结果列表
-                default_lock (threading.Lock): 线程锁，确保多线程环境下的数据安全
-                queue (Queue): 结果队列，用于传递测试结果
+        Args:
+            plan_tuple (list): 测试计划列表，包含要执行的测试用例信息
+            run_index (int): 当前执行轮次索引
+            default_result (list): 共享的结果列表
+            default_lock (threading.Lock): 线程锁，确保多线程环境下的数据安全
+            queue (Queue): 结果队列，用于传递测试结果
         """
-        self.test_case_tuple = test_case_list    # 一个测试集合
-        self.run_index = run_index      # 执行轮次索引
-        self.default_result = default_result    # 共享结果列表
-        self.default_lock = default_lock        # 线程锁
-        self.queue = queue          # 结果队列
-        self.config = LMConfig()    # 配置对象
-        self.task_id = ""           # 任务ID，用于结果回传
+        self.test_case_tuple = test_case_list  # 一个测试集合
+        self.run_index = run_index  # 执行轮次索引
+        self.default_result = default_result  # 共享结果列表
+        self.default_lock = default_lock  # 线程锁
+        self.queue = queue  # 结果队列
+        self.config = LMConfig()  # 配置对象
+        self.task_id = ""  # 任务ID，用于结果回传
 
     def run_test(self):
         """
@@ -96,17 +95,49 @@ class LMRun(object):
         # 获取测试数据目录
         test_dir = list(test_dirs)[0]
 
-        # 构建pytest参数
+        case_meta_map = {}
+        for item in self.test_case_tuple:
+            test_data_path = item.get("test_data", "")
+            if not test_data_path:
+                continue
+            test_case_name = item.get("test_case", "")
+            index = 0
+            if "_" in test_case_name:
+                try:
+                    index = int(test_case_name.split("_")[-1])
+                except Exception:
+                    index = 0
+            collection_id = item.get("test_class", "")
+            if collection_id.startswith("class_"):
+                collection_id = collection_id.split("class_", 1)[1]
+            if not collection_id:
+                collection_id = os.path.basename(os.path.dirname(test_data_path))
+            case_meta_map[os.path.abspath(test_data_path)] = {
+                "task_id": item.get("task_id", ""),
+                "collection_id": collection_id,
+                "index": index,
+                "run_times": self.run_index,
+                "session": item.get("session"),
+                "context": item.get("context"),
+            }
+
+        pytest_hooks.configure_runtime_result_channel(
+            queue=self.queue,
+            default_result=self.default_result,
+            default_lock=self.default_lock,
+        )
+        json_collector.configure_runtime_case_meta(case_meta_map)
+
         pytest_args = [
             "-v",
             "--tb=short",
             "--strict-markers",
-            "-p", "app.pytest_hooks",  # 加载自定义钩子
-            test_dir
+            "-p",
+            "app.pytest_hooks",  # 加载自定义钩子
+            "-p",
+            "app.json_collector",
+            test_dir,
         ]
-
-        # 创建自定义结果处理器（确保平台推送正常）
-        res = result.Result(self.default_result, self.default_lock, self.queue)
 
         # 执行pytest
         try:
@@ -144,12 +175,12 @@ class LMRun(object):
                 cls = eval(cls_name)
             except:
                 """
-                    # 如果类不存在，动态创建继承自LMCase的测试类; 等价于手动定义：
-                    class UserLoginTest(lm_case.LMCase):
-                        '''UserLoginTest'''
-                        pass
+                # 如果类不存在，动态创建继承自LMCase的测试类; 等价于手动定义：
+                class UserLoginTest(lm_case.LMCase):
+                    '''UserLoginTest'''
+                    pass
                 """
-                cls = type(cls_name, (case.LMCase,), {'__doc__': cls_name})
+                cls = type(cls_name, (case.LMCase,), {"__doc__": cls_name})
 
             case_name = case["test_case"]  # 测试用例名称
             case_type = case["test_type"]  # 测试类型(API/WEB/APP)
@@ -163,11 +194,11 @@ class LMRun(object):
             test_case = cls(case_name, case_data, case_type)
 
             # 设置测试用例的运行时属性
-            test_case.task_id = case["task_id"]     # 任务ID
-            test_case.driver = case["driver"]       # 浏览器驱动或设备连接
-            test_case.session = case["session"]     # 会话对象
-            test_case.context = case["context"]     # 上下文信息
-            test_case.run_index = self.run_index    # 执行轮次
+            test_case.task_id = case["task_id"]  # 任务ID
+            test_case.driver = case["driver"]  # 浏览器驱动或设备连接
+            test_case.session = case["session"]  # 会话对象
+            test_case.context = case["context"]  # 上下文信息
+            test_case.run_index = self.run_index  # 执行轮次
 
             suite.addTest(test_case)
 
@@ -177,72 +208,7 @@ class LMRun(object):
         try:
             suite(res)  # 执行测试套件
         except Exception as ex:
-            ErrorLogger("Failed to run test(RunTime:run%s & ThreadName:%s), Error info:%s" %
-                        (self.run_index, threading.current_thread().name, ex))
-
-
-class PytestResultCollector:
-    """
-    Pytest结果收集器
-
-    用于在Pytest执行模式下，将测试结果转换为平台要求的格式，
-    并通过queue回传给平台。
-
-    这个类作为result.py的补充，确保Pytest模式下的结果能正确回传。
-    """
-
-    @staticmethod
-    def convert_to_platform_format(pytest_result, case_info, task_id):
-        """
-        将Pytest测试结果转换为平台格式
-
-        Args:
-            pytest_result: pytest的测试结果对象
-            case_info: 用例信息字典
-            task_id: 任务ID
-
-        Returns:
-            dict: 平台格式的测试结果
-        """
-        # 根据pytest结果状态转换为平台状态码
-        # 0=成功, 1=失败, 2=错误, 3=跳过
-        status_map = {
-            "passed": 0,
-            "failed": 1,
-            "error": 2,
-            "skipped": 3
-        }
-
-        status = status_map.get(pytest_result.outcome, 0)
-
-        # 构建平台格式的结果
-        platform_result = {
-            "status": status,
-            "caseId": case_info.get("case_id", ""),
-            "caseName": case_info.get("case_name", ""),
-            "caseType": case_info.get("case_type", "API"),
-            "collectionId": "",
-            "index": case_info.get("index", 0),
-            "runTimes": 1,
-            "startTime": int(datetime.datetime.now().timestamp() * 1000),
-            "endTime": int(datetime.datetime.now().timestamp() * 1000),
-            "transactionList": case_info.get("trans_list", [])
-        }
-
-        return platform_result
-
-    @staticmethod
-    def push_to_queue(platform_result, queue, default_result, lock):
-        """
-        将结果推送到队列
-
-        Args:
-            platform_result: 平台格式的测试结果
-            queue: 结果队列
-            default_result: 共享结果列表
-            lock: 线程锁
-        """
-        if lock.acquire():
-            default_result.append(platform_result)
-            queue.put(platform_result)
-            lock.release()
+            ErrorLogger(
+                "Failed to run test(RunTime:run%s & ThreadName:%s), Error info:%s"
+                % (self.run_index, threading.current_thread().name, ex)
+            )
